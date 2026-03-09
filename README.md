@@ -30,7 +30,7 @@ Floptic answers these questions with a suite of micro-benchmarks that produce st
 
 ```bash
 mkdir build && cd build
-cmake .. -DKokkos_ROOT=/path/to/kokkos
+cmake .. -DCMAKE_CUDA_ARCHITECTURES=80   # optional: target specific GPU arch
 make -j
 ./floptic --device=cuda:0 --precision=all --report=json
 ```

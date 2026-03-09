@@ -177,4 +177,8 @@ public:
 
 REGISTER_KERNEL(ScalarFmaCpu);
 
+namespace force_link {
+    void scalar_fma_cpu_link() {}  // referenced from main.cpp to prevent linker stripping
+}
+
 } // namespace floptic

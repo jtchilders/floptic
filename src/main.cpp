@@ -5,6 +5,24 @@
 #include <iostream>
 #include <algorithm>
 
+// Force-link kernel translation units from static libraries.
+// Without these references, the linker may discard the .o files
+// and the REGISTER_KERNEL static initializers never run.
+namespace floptic {
+    namespace force_link {
+        extern void scalar_fma_cpu_link();
+#ifdef FLOPTIC_HAS_CUDA
+        extern void scalar_fma_cuda_link();
+#endif
+    }
+    static void force_link_all() {
+        force_link::scalar_fma_cpu_link();
+#ifdef FLOPTIC_HAS_CUDA
+        force_link::scalar_fma_cuda_link();
+#endif
+    }
+}
+
 namespace floptic {
 
 // Defined in device backends
@@ -26,6 +44,9 @@ std::vector<DeviceInfo> discover_devices() {
 
 int main(int argc, char* argv[]) {
     using namespace floptic;
+
+    // Ensure kernel registration from static libs
+    force_link_all();
 
     std::cerr << "Floptic v0.1.0 — A lens on your FLOP throughput\n" << std::endl;
 
@@ -130,14 +151,14 @@ int main(int argc, char* argv[]) {
                         KernelConfig config;
                         config.precision = precision;
                         config.mode = mode;
-                        config.iterations = opts.iterations > 1000
-                            ? opts.iterations : 100000;  // inner loop iters
+                        config.iterations = 100000;  // inner loop iterations (work per trial)
                         config.device_id = device.id;
 
                         std::cerr << "\n--- " << kernel->name() << " | "
                                   << precision_to_string(precision) << " | "
                                   << mode << " ---" << std::endl;
 
+                        // opts.iterations = number of measurement trials
                         auto result = kernel->run(config, device, opts.iterations);
 
                         std::cerr << "  Result: " << result.gflops << " GFLOP/s"

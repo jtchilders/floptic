@@ -177,6 +177,10 @@ public:
 
 REGISTER_KERNEL(ScalarFmaCuda);
 
+namespace force_link {
+    void scalar_fma_cuda_link() {}  // referenced from main.cpp to prevent linker stripping
+}
+
 } // namespace floptic
 
 #endif // FLOPTIC_HAS_CUDA

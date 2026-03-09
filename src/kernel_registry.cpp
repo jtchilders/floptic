@@ -9,9 +9,6 @@ KernelRegistry& KernelRegistry::instance() {
 }
 
 void KernelRegistry::register_kernel(std::unique_ptr<KernelBase> kernel) {
-    std::cout << "  Registered kernel: " << kernel->name()
-              << " [" << kernel->backend() << "/" << kernel->category() << "]"
-              << std::endl;
     kernels_.push_back(std::move(kernel));
 }
 

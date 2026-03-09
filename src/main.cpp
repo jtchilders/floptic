@@ -153,6 +153,10 @@ int main(int argc, char* argv[]) {
                         config.mode = mode;
                         config.iterations = 100000;  // inner loop iterations (work per trial)
                         config.device_id = device.id;
+                        config.threads = opts.cpu_threads;
+                        config.gpu_blocks = opts.gpu_blocks;
+                        config.gpu_threads_per_block = opts.gpu_threads_per_block;
+                        config.gpu_blocks_per_sm = opts.gpu_blocks_per_sm;
 
                         std::cerr << "\n--- " << kernel->name() << " | "
                                   << precision_to_string(precision) << " | "

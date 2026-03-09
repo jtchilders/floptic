@@ -12,7 +12,13 @@ struct KernelConfig {
     Precision precision = Precision::FP64;
     std::string mode = "throughput";    // "throughput" or "latency"
     int64_t iterations = 100000;        // inner loop iterations
-    int threads = 0;                    // 0 = auto-detect
+    int threads = 0;                    // 0 = auto-detect (CPU: all cores, GPU: all SMs)
+
+    // GPU-specific launch config (0 = auto)
+    int gpu_blocks = 0;                 // total thread blocks
+    int gpu_threads_per_block = 256;    // threads per block
+    int gpu_blocks_per_sm = 4;          // blocks per SM (used when gpu_blocks=0)
+
     std::string device_id;              // target device
 };
 

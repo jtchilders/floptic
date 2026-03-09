@@ -114,11 +114,15 @@ public:
             dev_idx = std::stoi(device.id.substr(pos + 1));
         cudaSetDevice(dev_idx);
 
-        // Launch configuration: fill all SMs
+        // Launch configuration
         int sms = device.compute_units;
-        int threads_per_block = 256;
-        int blocks_per_sm = 4;  // target reasonable occupancy
-        int blocks = sms * blocks_per_sm;
+        int threads_per_block = config.gpu_threads_per_block;
+        int blocks;
+        if (config.gpu_blocks > 0) {
+            blocks = config.gpu_blocks;
+        } else {
+            blocks = sms * config.gpu_blocks_per_sm;
+        }
         int total_threads = blocks * threads_per_block;
 
         int64_t iters = config.iterations;

@@ -26,6 +26,12 @@ void print_usage(const char* progname) {
               << "  --warmup=<N>         Warmup iterations (default: 10)\n"
               << "  --report=<FMT>       Output format: json, stdout (default: json)\n"
               << "  --output=<PATH>      Output file (default: stdout)\n"
+              << "\nThread control:\n"
+              << "  --cpu-threads=<N>    CPU threads (default: all cores)\n"
+              << "  --gpu-blocks=<N>     GPU thread blocks (default: auto = blocks-per-sm × SMs)\n"
+              << "  --gpu-tpb=<N>        GPU threads per block (default: 256)\n"
+              << "  --gpu-bpsm=<N>       GPU blocks per SM (default: 4, used when --gpu-blocks=0)\n"
+              << "\nOther:\n"
               << "  --list               List available kernels and exit\n"
               << "  --info               Print device info and exit\n"
               << "  --help               Show this help\n"
@@ -72,6 +78,14 @@ CliOptions parse_args(int argc, char* argv[]) {
             opts.report_format = arg.substr(9);
         } else if (arg.rfind("--output=", 0) == 0) {
             opts.output_path = arg.substr(9);
+        } else if (arg.rfind("--cpu-threads=", 0) == 0) {
+            opts.cpu_threads = std::stoi(arg.substr(14));
+        } else if (arg.rfind("--gpu-blocks=", 0) == 0) {
+            opts.gpu_blocks = std::stoi(arg.substr(13));
+        } else if (arg.rfind("--gpu-tpb=", 0) == 0) {
+            opts.gpu_threads_per_block = std::stoi(arg.substr(10));
+        } else if (arg.rfind("--gpu-bpsm=", 0) == 0) {
+            opts.gpu_blocks_per_sm = std::stoi(arg.substr(11));
         } else {
             std::cerr << "Unknown option: " << arg << "\n";
             opts.help = true;

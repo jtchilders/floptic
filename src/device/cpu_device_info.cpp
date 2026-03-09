@@ -2,9 +2,14 @@
 #include <fstream>
 #include <sstream>
 #include <thread>
+#include <iostream>
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
+#endif
+
+#if defined(__x86_64__) || defined(_M_X64)
+#include <cpuid.h>
 #endif
 
 namespace floptic {
@@ -35,7 +40,6 @@ static int get_cpu_freq_mhz() {
 #ifdef __APPLE__
     uint64_t freq = 0;
     size_t len = sizeof(freq);
-    // Try getting nominal frequency
     if (sysctlbyname("hw.cpufrequency", &freq, &len, nullptr, 0) == 0)
         return static_cast<int>(freq / 1000000);
     return 0;
@@ -68,7 +72,6 @@ static std::string detect_vendor() {
 #ifdef __APPLE__
     return "apple";
 #elif defined(__x86_64__)
-    // Could use CPUID for Intel vs AMD, simplified for now
     std::string name = get_cpu_name();
     if (name.find("Intel") != std::string::npos) return "intel";
     if (name.find("AMD") != std::string::npos) return "amd";
@@ -76,6 +79,83 @@ static std::string detect_vendor() {
 #else
     return "unknown";
 #endif
+}
+
+// Detect SIMD capabilities via CPUID
+struct SimdCaps {
+    bool sse2 = false;
+    bool avx = false;
+    bool avx2 = false;
+    bool fma3 = false;
+    bool avx512f = false;
+    bool avx512_fp16 = false;
+
+    // SIMD width in bits for peak calculation
+    int simd_bits() const {
+        if (avx512f) return 512;
+        if (avx2 || avx) return 256;
+        if (sse2) return 128;
+        return 64;  // scalar
+    }
+
+    // FP64 FMA ops per cycle per core
+    // Assuming 2 FMA units for modern x86 (Intel since Haswell, AMD since Zen)
+    int fp64_fmas_per_cycle(const std::string& vendor) const {
+        int lanes = simd_bits() / 64;  // FP64 lanes per SIMD register
+        int fma_units = 2;             // most modern x86 have 2 FMA units
+        // AMD Zen2/Zen3: 2× 256-bit FMA units
+        // Intel Haswell+: 2× 256-bit FMA units
+        // Intel SKX+: 2× 512-bit FMA units
+        if (avx512f && vendor == "intel") {
+            fma_units = 2;  // 2× 512-bit
+        } else if (avx512f && vendor == "amd") {
+            // AMD Zen4+ has AVX-512 but 256-bit execution units (cracks to 2 uops)
+            // Effective: same as 2× 256-bit
+            lanes = 256 / 64;
+            fma_units = 2;
+        }
+        return lanes * fma_units;
+    }
+
+    // FP32 FMA ops per cycle per core
+    int fp32_fmas_per_cycle(const std::string& vendor) const {
+        int lanes = simd_bits() / 32;
+        int fma_units = 2;
+        if (avx512f && vendor == "amd") {
+            lanes = 256 / 32;
+            fma_units = 2;
+        }
+        return lanes * fma_units;
+    }
+};
+
+static SimdCaps detect_simd() {
+    SimdCaps caps;
+
+#if defined(__x86_64__) || defined(_M_X64)
+    unsigned int eax, ebx, ecx, edx;
+
+    // CPUID function 1: basic features
+    if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
+        caps.sse2 = (edx >> 26) & 1;
+        caps.avx  = (ecx >> 28) & 1;
+        caps.fma3 = (ecx >> 12) & 1;
+    }
+
+    // CPUID function 7, subleaf 0: extended features
+    if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
+        caps.avx2    = (ebx >> 5) & 1;
+        caps.avx512f = (ebx >> 16) & 1;
+        // AVX-512 FP16 is in CPUID.7.0:EDX bit 23
+        caps.avx512_fp16 = (edx >> 23) & 1;
+    }
+#elif defined(__aarch64__)
+    // AArch64 always has NEON (128-bit SIMD) and FMA
+    caps.fma3 = true;
+    // Treat as 128-bit SIMD equivalent
+#endif
+
+    return caps;
 }
 
 std::vector<DeviceInfo> discover_cpu_devices() {
@@ -87,22 +167,43 @@ std::vector<DeviceInfo> discover_cpu_devices() {
     cpu.type = "cpu";
     cpu.compute_units = std::thread::hardware_concurrency();
     cpu.clock_mhz = get_cpu_freq_mhz();
-    cpu.boost_clock_mhz = cpu.clock_mhz;  // best we can do without root
+    cpu.boost_clock_mhz = cpu.clock_mhz;
 
     // All CPUs support FP64 and FP32
     cpu.supported_precisions = {Precision::FP64, Precision::FP32};
-    cpu.features.push_back(Feature::FMA_HW);
 
-    // TODO: CPUID for AVX2, AVX-512, AMX detection
+    // Detect SIMD
+    auto simd = detect_simd();
 
-    // Theoretical peak: cores × clock × FLOPs/cycle
-    // Assuming FMA (2 FLOPs) and some SIMD width
-    // Conservative: assume scalar FMA only for now
+    if (simd.fma3)    cpu.features.push_back(Feature::FMA_HW);
+    if (simd.avx2)    cpu.features.push_back(Feature::AVX2);
+    if (simd.avx512f) cpu.features.push_back(Feature::AVX512);
+    if (simd.avx512_fp16) {
+        cpu.features.push_back(Feature::AVX512_FP16);
+        cpu.supported_precisions.push_back(Precision::FP16);
+    }
+
+    // Report detected SIMD
+    std::cerr << "  CPU SIMD: " << simd.simd_bits() << "-bit"
+              << (simd.avx512f ? " (AVX-512)" : simd.avx2 ? " (AVX2)" : simd.avx ? " (AVX)" : "")
+              << (simd.fma3 ? " + FMA" : "")
+              << std::endl;
+
+    // Theoretical peak calculation
     double clock_ghz = cpu.boost_clock_mhz / 1000.0;
-    if (clock_ghz > 0) {
-        // Very conservative — just scalar FMA per core
-        cpu.theoretical_peak_gflops["FP64"] = cpu.compute_units * clock_ghz * 2.0;
-        cpu.theoretical_peak_gflops["FP32"] = cpu.compute_units * clock_ghz * 2.0;
+    int cores = cpu.compute_units;
+    if (clock_ghz > 0 && cores > 0) {
+        // FMA = 2 FLOPs (multiply + add)
+        int fp64_fmas = simd.fp64_fmas_per_cycle(cpu.vendor);
+        int fp32_fmas = simd.fp32_fmas_per_cycle(cpu.vendor);
+
+        cpu.theoretical_peak_gflops["FP64"] = cores * clock_ghz * fp64_fmas * 2.0;
+        cpu.theoretical_peak_gflops["FP32"] = cores * clock_ghz * fp32_fmas * 2.0;
+
+        std::cerr << "  CPU theoretical peak: "
+                  << cpu.theoretical_peak_gflops["FP64"] << " GFLOP/s FP64, "
+                  << cpu.theoretical_peak_gflops["FP32"] << " GFLOP/s FP32"
+                  << std::endl;
     }
 
     return {cpu};

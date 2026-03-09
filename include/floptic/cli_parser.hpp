@@ -14,6 +14,13 @@ struct CliOptions {
     int warmup = 10;                        // warmup iterations
     std::string report_format = "json";     // "json", "csv", "stdout"
     std::string output_path;                // empty = stdout
+
+    // Thread control
+    int cpu_threads = 0;                    // 0 = all cores
+    int gpu_blocks = 0;                     // 0 = auto (blocks_per_sm × SMs)
+    int gpu_threads_per_block = 256;        // threads per block
+    int gpu_blocks_per_sm = 4;              // blocks per SM (when gpu_blocks=0)
+
     bool list_kernels = false;
     bool show_info = false;
     bool help = false;

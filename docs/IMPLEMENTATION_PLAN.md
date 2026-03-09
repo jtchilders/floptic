@@ -8,9 +8,10 @@
    than fighting a portability framework.
 2. **User-level privileges only** — No clock locking, no root-level power APIs.
    Sample and report clock frequencies and available power data opportunistically.
-3. **Emulated precision reports both raw and effective GFLOP/s** — e.g., a
-   dd-FP32 multiply uses ~10 FP32 ops internally; report the raw FP32 GFLOP/s
-   *and* the effective "equivalent FP64" GFLOP/s for direct comparison with native.
+3. **Emulated precision reports both raw and effective GFLOP/s** — e.g., an
+   Ozaki GEMM uses many FP16 tensor core ops internally; report the raw
+   FP16 GFLOP/s *and* the effective "equivalent FP64" GFLOP/s for direct
+   comparison with native.
 4. **Single device only** — No multi-GPU benchmarks.
 
 ---
@@ -96,8 +97,6 @@ floptic/
 │   │   │   └── sparse_gemm_rocsparse.cpp
 │   │   │
 │   │   └── emulated/
-│   │       ├── dd_scalar_cuda.cu       # Double-double scalar ops (GPU)
-│   │       ├── dd_scalar_cpu.cpp       # Double-double scalar ops (CPU)
 │   │       ├── ozaki_gemm_cuda.cu      # Ozaki scheme via tensor cores
 │   │       └── ozaki_gemm_hip.cpp      # Ozaki scheme via matrix cores
 │   │
@@ -137,9 +136,7 @@ floptic/
 enum class Precision {
     FP64, FP32, FP16, BF16, TF32,
     FP8_E4M3, FP8_E5M2, FP4,
-    INT8, INT4,
-    DD_FP32,    // double-double via FP32 pairs → emulated FP64
-    DD_FP64     // double-double via FP64 pairs → emulated FP128
+    INT8, INT4
 };
 
 // Maps Precision → native C++ type, size, FLOP semantics
@@ -149,19 +146,21 @@ template <> struct PrecisionTraits<Precision::FP64> {
     using type = double;
     static constexpr size_t bytes = 8;
     static constexpr const char* name = "FP64";
-    static constexpr bool is_emulated = false;
     static constexpr int fma_flops = 2;         // multiply + add
 };
 
-template <> struct PrecisionTraits<Precision::DD_FP32> {
-    using hi_type = float;
-    using lo_type = float;
-    static constexpr size_t bytes = 8;           // two floats
-    static constexpr const char* name = "DD_FP32";
-    static constexpr bool is_emulated = true;
-    static constexpr Precision emulates = Precision::FP64;
-    static constexpr int raw_ops_per_fma = 10;   // ~10 FP32 ops per dd FMA
-    static constexpr int effective_fma_flops = 2; // equivalent to 1 FP64 FMA
+template <> struct PrecisionTraits<Precision::FP32> {
+    using type = float;
+    static constexpr size_t bytes = 4;
+    static constexpr const char* name = "FP32";
+    static constexpr int fma_flops = 2;
+};
+
+template <> struct PrecisionTraits<Precision::FP16> {
+    // using type = __half;  // CUDA-specific, handled per-backend
+    static constexpr size_t bytes = 2;
+    static constexpr const char* name = "FP16";
+    static constexpr int fma_flops = 2;
 };
 ```
 
@@ -504,23 +503,7 @@ std::vector<DeviceInfo> discover_devices();
   - Only on Ampere+ (sm_80+)
 - [ ] `sparse_gemm`: Sparse × Dense via cuSPARSE / rocSPARSE
 
-#### 4.2 Double-Double Scalar Arithmetic
-- [ ] `dd_scalar_cuda.cu` and `dd_scalar_cpu.cpp`:
-  - Implement TwoSum, TwoProduct error-free transformations
-  - Build dd_add, dd_mul, dd_div from EFTs
-  - Test configurations:
-    | Base Precision | Emulates | Use Case |
-    |---------------|----------|----------|
-    | FP32 pairs    | ~FP64    | Replacing native FP64 |
-    | FP64 pairs    | ~FP128   | Replacing quadmath |
-  - Run same scalar FMA benchmark structure (throughput + latency)
-  - Report:
-    - `raw_gflops`: total base-precision ops / second
-    - `effective_gflops`: equivalent target-precision ops / second
-    - `overhead_factor`: raw_ops_per_emulated_op (measured, ~10-20×)
-    - `accuracy`: max ULP error vs FP128 reference
-
-#### 4.3 Ozaki Scheme GEMM
+#### 4.2 Ozaki Scheme GEMM
 - [ ] `ozaki_gemm_cuda.cu`:
   - Split FP64 matrix into K slices of FP16/FP32
   - K depends on input range and target accuracy
@@ -534,7 +517,7 @@ std::vector<DeviceInfo> discover_devices();
   - Compare vs native cuBLAS DGEMM:
     - Crossover point: at what matrix size does Ozaki win?
 
-#### 4.4 Accuracy Verification Framework
+#### 4.3 Accuracy Verification Framework
 - [ ] Reference computation: FP128 via `__float128` / `_Quad` on CPU
 - [ ] Metrics:
   - Max ULP error
@@ -569,7 +552,7 @@ std::vector<DeviceInfo> discover_devices();
   - Bar charts: GFLOP/s by precision for each kernel category
   - Heatmap: kernel × precision → GFLOP/s (normalized to peak)
   - Scaling plots: GFLOP/s vs problem size (vector length, matrix dim)
-  - Emulation comparison: native FP64 vs dd-FP32 vs Ozaki
+  - Emulation comparison: native FP64 vs Ozaki
 
 #### 5.3 Documentation
 - [ ] `output-format.md`: Complete JSON schema with field descriptions
@@ -626,21 +609,21 @@ Matrix/sparse kernels run in throughput mode only (inherently parallel).
 | Transcendental (sin, exp, ...) | 1 |
 | GEMM (M×N×K) | 2×M×N×K |
 | SpMV (NNZ non-zeros) | 2×NNZ |
-| DD FMA (emulated) | raw: ~10-20 base ops; effective: 2 |
+| Ozaki GEMM (emulated) | raw: K² low-prec GEMMs; effective: 2×M×N×K |
 
 ### 5. Emulated Precision Reporting
-For emulated kernels, always report both:
+For emulated kernels (e.g., Ozaki scheme), always report both:
 ```json
 {
-    "raw_gflops": 5000.0,          // FP32 ops actually executed
-    "raw_precision": "FP32",
-    "effective_gflops": 500.0,     // equivalent FP64 ops achieved
+    "raw_gflops": 250000.0,        // FP16 tensor core ops actually executed
+    "raw_precision": "FP16",
+    "effective_gflops": 25000.0,   // equivalent FP64 ops achieved
     "effective_precision": "FP64",
-    "overhead_factor": 10.0,       // raw / effective
+    "num_splits": 3,               // Ozaki splitting factor K
     "accuracy": {
-        "max_ulp_error": 0.0,
-        "sig_digits": 15.9,
-        "correctly_rounded_pct": 99.97
+        "max_ulp_error": 0.5,
+        "sig_digits": 15.7,
+        "correctly_rounded_pct": 99.8
     }
 }
 ```
@@ -715,36 +698,37 @@ For emulated kernels, always report both:
         },
         {
             "device_id": "cuda:0",
-            "kernel": "dd_scalar_fma",
+            "kernel": "ozaki_gemm",
             "category": "emulated",
-            "precision": "DD_FP32",
+            "precision": "FP16_TC",
+            "effective_precision": "FP64",
             "mode": "throughput",
             "problem_size": {
-                "threads": 1048576,
-                "chains_per_thread": 8,
-                "iterations_per_chain": 100000
+                "M": 4096,
+                "N": 4096,
+                "K": 4096,
+                "num_splits": 3
             },
             "results": {
-                "gflops": 4800.0,
-                "raw_precision": "FP32",
-                "effective_gflops": 480.0,
+                "gflops": 250000.0,
+                "raw_precision": "FP16",
+                "effective_gflops": 25000.0,
                 "effective_precision": "FP64",
-                "overhead_factor": 10.0,
-                "peak_percent": 24.6,
-                "median_time_ms": 2.07,
-                "min_time_ms": 2.05,
-                "max_time_ms": 2.15,
-                "total_flops": 1677721600000,
+                "peak_percent": 80.2,
+                "median_time_ms": 0.55,
+                "min_time_ms": 0.54,
+                "max_time_ms": 0.59,
+                "total_flops": 137438953472,
                 "clock_mhz": 1410,
-                "power_watts": 350.0,
-                "gflops_per_watt": 1.37
+                "power_watts": 390.0,
+                "gflops_per_watt": 64.1
             },
             "accuracy": {
-                "max_ulp_error": 0.0,
-                "rms_ulp_error": 0.0,
-                "sig_digits": 15.9,
-                "correctly_rounded_pct": 100.0,
-                "reference": "FP128_CPU"
+                "max_ulp_error": 0.5,
+                "rms_ulp_error": 0.1,
+                "sig_digits": 15.7,
+                "correctly_rounded_pct": 99.8,
+                "reference": "native_FP64_DGEMM"
             }
         }
     ],
@@ -762,13 +746,10 @@ For emulated kernels, always report both:
             }
         },
         "emulation_viability": {
-            "dd_fp32_vs_native_fp64": {
-                "speedup": 0.05,
-                "accuracy": "full FP64"
-            },
             "ozaki_vs_native_fp64": {
                 "speedup": 2.5,
-                "accuracy": "near-FP64"
+                "accuracy": "near-FP64",
+                "num_splits": 3
             }
         }
     }
@@ -827,4 +808,4 @@ For emulated kernels, always report both:
 | OpenMP | CPU parallelism | Optional (strongly recommended) |
 | Python 3.8+ | Analysis scripts | Optional |
 | matplotlib, pandas | Plotting & analysis | Optional |
-| quadmath (`__float128`) | FP128 reference for accuracy | Optional (GCC only) |
+| quadmath (`__float128`) | FP128 reference for Ozaki accuracy | Optional (GCC only) |

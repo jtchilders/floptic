@@ -4,6 +4,8 @@
 #include "floptic/report.hpp"
 #include <iostream>
 #include <algorithm>
+#include <map>
+#include <cstdio>
 
 // Force-link kernel translation units from static libraries.
 // Without these references, the linker may discard the .o files
@@ -192,7 +194,81 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::cerr << "\n=== Generating report ===" << std::endl;
+    // ========================================================================
+    // Summary table
+    // ========================================================================
+    std::cerr << "\n";
+
+    // Group benchmarks by device
+    std::map<std::string, std::vector<const BenchmarkEntry*>> by_device;
+    for (auto& e : report.benchmarks) {
+        by_device[e.device_id].push_back(&e);
+    }
+
+    for (auto& [dev_id, entries] : by_device) {
+        // Find device name
+        std::string dev_name = dev_id;
+        for (auto& d : report.devices) {
+            if (d.id == dev_id) { dev_name = d.name; break; }
+        }
+
+        std::cerr << "╔══════════════════════════════════════════════════════════════════════════════════╗" << std::endl;
+        std::cerr << "║  " << dev_id << " (" << dev_name << ")" << std::endl;
+        std::cerr << "╠══════════════════════════════════════════════════════════════════════════════════╣" << std::endl;
+        std::cerr << "║ Kernel              │ Prec │ Mode       │    GFLOP/s │ Peak%  │ Median (ms) ║" << std::endl;
+        std::cerr << "╟─────────────────────┼──────┼────────────┼────────────┼────────┼─────────────╢" << std::endl;
+
+        std::string prev_kernel;
+        for (auto* e : entries) {
+            // Separator between different kernels
+            if (!prev_kernel.empty() && prev_kernel != e->kernel_name) {
+                std::cerr << "╟─────────────────────┼──────┼────────────┼────────────┼────────┼─────────────╢" << std::endl;
+            }
+            prev_kernel = e->kernel_name;
+
+            // Format kernel name (truncate to 19 chars)
+            std::string kname = e->kernel_name;
+            if (kname.size() > 19) kname = kname.substr(0, 19);
+
+            // Format GFLOP/s with appropriate units
+            char gflops_buf[16];
+            if (e->result.gflops >= 1e6) {
+                snprintf(gflops_buf, sizeof(gflops_buf), "%8.1f T", e->result.gflops / 1e3);
+            } else if (e->result.gflops >= 1000) {
+                snprintf(gflops_buf, sizeof(gflops_buf), "%8.1f G", e->result.gflops);
+            } else {
+                snprintf(gflops_buf, sizeof(gflops_buf), "%8.2f G", e->result.gflops);
+            }
+
+            // Format peak%
+            char peak_buf[10];
+            snprintf(peak_buf, sizeof(peak_buf), "%5.1f%%", e->result.peak_percent);
+
+            // Format time
+            char time_buf[14];
+            snprintf(time_buf, sizeof(time_buf), "%9.3f", e->result.median_time_ms);
+
+            // Format mode (truncate)
+            std::string mode = e->mode;
+            if (mode.size() > 10) mode = mode.substr(0, 10);
+
+            fprintf(stderr, "║ %-19s │ %-4s │ %-10s │ %10s │ %6s │ %11s ║\n",
+                    kname.c_str(),
+                    e->precision.c_str(),
+                    mode.c_str(),
+                    gflops_buf,
+                    peak_buf,
+                    time_buf);
+        }
+
+        std::cerr << "╚══════════════════════════════════════════════════════════════════════════════════╝" << std::endl;
+        std::cerr << std::endl;
+    }
+
+    // Write JSON/file report
+    if (!opts.output_path.empty()) {
+        std::cerr << "Report written to: " << opts.output_path << std::endl;
+    }
     write_json_report(report, opts.output_path);
 
     return 0;

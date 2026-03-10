@@ -389,9 +389,6 @@ public:
         std::cerr << "  Running gemm_cublas_fp8 [cuda/" << fp8Name
                   << "/throughput (tensor cores)] M=N=K=" << M << std::endl;
 
-        cudaDataType_t fp8Type = (config.precision == Precision::FP8_E4M3)
-                                  ? CUDA_R_8F_E4M3 : CUDA_R_8F_E5M2;
-
         // Test if this actually works before running trials
         float test_ms = run_gemm_fp8(fp8Type, M, N, K);
         if (test_ms <= 0) {

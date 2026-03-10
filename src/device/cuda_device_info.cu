@@ -155,8 +155,14 @@ std::vector<DeviceInfo> discover_cuda_devices() {
         dev.type = "gpu";
         dev.memory_bytes = props.totalGlobalMem;
         dev.compute_units = props.multiProcessorCount;
-        dev.clock_mhz = props.clockRate / 1000;
-        dev.boost_clock_mhz = props.clockRate / 1000;
+        // clockRate was removed from cudaDeviceProp in CUDA 13.
+        // Use cudaDeviceGetAttribute instead (works on all CUDA versions).
+        {
+            int clockKHz = 0;
+            cudaDeviceGetAttribute(&clockKHz, cudaDevAttrClockRate, i);
+            dev.clock_mhz = clockKHz / 1000;
+            dev.boost_clock_mhz = clockKHz / 1000;
+        }
 
         // --- Supported precisions ---
         dev.supported_precisions = {Precision::FP64, Precision::FP32};

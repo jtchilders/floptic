@@ -60,18 +60,24 @@ if(FLOPTIC_HAS_CUDA)
         src/kernels/vector/vector_axpy_cuda.cu
         src/kernels/vector/stream_triad_cuda.cu
         src/kernels/matrix/gemm_cublas.cu
+        src/kernels/matrix/gemm_cublas_8bit.cu
     )
     target_include_directories(floptic_cuda PUBLIC include)
     target_link_libraries(floptic_cuda PUBLIC nlohmann_json::nlohmann_json)
     target_compile_definitions(floptic_cuda PUBLIC FLOPTIC_HAS_CUDA)
 
-    # Link cuBLAS for GEMM kernels
+    # Link cuBLAS and cuBLASLt for GEMM kernels
     find_library(CUBLAS_LIBRARY cublas HINTS ${CUDAToolkit_LIBRARY_DIR} /usr/local/cuda/lib64)
+    find_library(CUBLASLT_LIBRARY cublasLt HINTS ${CUDAToolkit_LIBRARY_DIR} /usr/local/cuda/lib64)
     if(CUBLAS_LIBRARY)
         target_link_libraries(floptic_cuda PUBLIC ${CUBLAS_LIBRARY})
         message(STATUS "Floptic: cuBLAS found for GEMM benchmarks")
     else()
         message(WARNING "Floptic: cuBLAS not found — GEMM benchmarks will fail at runtime")
+    endif()
+    if(CUBLASLT_LIBRARY)
+        target_link_libraries(floptic_cuda PUBLIC ${CUBLASLT_LIBRARY})
+        message(STATUS "Floptic: cuBLASLt found for FP8 GEMM benchmarks")
     endif()
 
     # Link NVML for power monitoring (user-level)

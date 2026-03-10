@@ -21,6 +21,8 @@ namespace floptic {
         extern void stream_copy_cuda_link();
         extern void gemm_cublas_link();
         extern void gemm_cublas_notc_link();
+        extern void gemm_cublas_int8_link();
+        extern void gemm_cublas_fp8_link();
 #endif
     }
     static void force_link_all() {
@@ -33,6 +35,8 @@ namespace floptic {
         force_link::stream_copy_cuda_link();
         force_link::gemm_cublas_link();
         force_link::gemm_cublas_notc_link();
+        force_link::gemm_cublas_int8_link();
+        force_link::gemm_cublas_fp8_link();
 #endif
     }
 }

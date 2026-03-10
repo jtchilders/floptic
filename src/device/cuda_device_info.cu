@@ -176,7 +176,16 @@ std::vector<DeviceInfo> discover_cuda_devices() {
             dev.supported_precisions.push_back(Precision::TF32);
         }
 
-        // INT8: supported on CUDA cores via DP4A from compute >= 6.1
+        // INT8: tensor cores from Volta+
+        if (props.major >= 7) {
+            dev.supported_precisions.push_back(Precision::INT8);
+        }
+
+        // FP8 E4M3/E5M2: Hopper+ tensor cores (sm_89/sm_90+)
+        if (props.major >= 9 || (props.major == 8 && props.minor == 9)) {
+            dev.supported_precisions.push_back(Precision::FP8_E4M3);
+            dev.supported_precisions.push_back(Precision::FP8_E5M2);
+        }
 
         // --- Features ---
         dev.features.push_back(Feature::FMA_HW);

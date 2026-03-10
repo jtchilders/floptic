@@ -40,7 +40,7 @@ inline Precision string_to_precision(const std::string& s) {
     if (s == "fp16" || s == "FP16") return Precision::FP16;
     if (s == "bf16" || s == "BF16") return Precision::BF16;
     if (s == "tf32" || s == "TF32") return Precision::TF32;
-    if (s == "fp8e4m3" || s == "FP8_E4M3") return Precision::FP8_E4M3;
+    if (s == "fp8e4m3" || s == "FP8_E4M3" || s == "fp8" || s == "FP8") return Precision::FP8_E4M3;
     if (s == "fp8e5m2" || s == "FP8_E5M2") return Precision::FP8_E5M2;
     if (s == "fp4" || s == "FP4") return Precision::FP4;
     if (s == "int8" || s == "INT8") return Precision::INT8;
@@ -49,7 +49,8 @@ inline Precision string_to_precision(const std::string& s) {
 }
 
 inline std::vector<Precision> all_standard_precisions() {
-    return { Precision::FP64, Precision::FP32, Precision::TF32, Precision::FP16, Precision::BF16 };
+    return { Precision::FP64, Precision::FP32, Precision::TF32, Precision::FP16, Precision::BF16,
+             Precision::FP8_E4M3, Precision::FP8_E5M2, Precision::INT8 };
 }
 
 // Type mapping for compile-time dispatch

@@ -137,40 +137,37 @@ static float run_gemm_int8(int M, int N, int K) {
 
 #ifdef FLOPTIC_HAS_FP8_TYPES
 
-// FP8 GEMM: use BF16 output instead of FP16 (better compatibility on Hopper)
-// Also try with a transposed B matrix which some FP8 configs require
+// FP8 GEMM via cublasLtMatmul
+// The standard Hopper FP8 pattern:
+//   A = FP8 E4M3 (col-major), B = FP8 E4M3 (col-major), C/D = BF16
+//   Compute = FP32
+// Supports both E4M3 and E5M2 (user-selected)
 
-static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
+static float run_gemm_fp8(cudaDataType_t fp8TypeA, cudaDataType_t fp8TypeB,
+                           int M, int N, int K) {
     void *d_A, *d_B;
-    void *d_C;  // Use BF16 for output
+    void *d_C;
 
     check_cuda_8(cudaMalloc(&d_A, (size_t)M * K), "alloc A fp8");
     check_cuda_8(cudaMalloc(&d_B, (size_t)K * N), "alloc B fp8");
-    check_cuda_8(cudaMalloc(&d_C, (size_t)M * N * sizeof(__half)), "alloc C");
+    // Output as BF16
+    check_cuda_8(cudaMalloc(&d_C, (size_t)M * N * 2), "alloc C bf16");
 
-    cudaMemset(d_A, 0, (size_t)M * K);
-    cudaMemset(d_B, 0, (size_t)K * N);
-    cudaMemset(d_C, 0, (size_t)M * N * sizeof(__half));
+    cudaMemset(d_A, 0x38, (size_t)M * K);  // ~0.5 in FP8 E4M3
+    cudaMemset(d_B, 0x38, (size_t)K * N);
+    cudaMemset(d_C, 0, (size_t)M * N * 2);
 
     cublasLtHandle_t ltHandle;
     cublasLtCreate(&ltHandle);
 
-    // Try multiple configurations that Hopper FP8 supports
-    // Config 1: A=fp8, B=fp8, C=D=bf16, compute=fp32
-    // Config 2: A=fp8_e4m3, B=fp8_e5m2, C=D=bf16 (mixed FP8)
-
+    // D = alpha * (A x B) + beta * C
     cublasLtMatmulDesc_t operationDesc;
     cublasLtMatmulDescCreate(&operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F);
 
-    // Some FP8 configs require B to be transposed
-    cublasOperation_t transB = CUBLAS_OP_T;
-    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSB,
-                                    &transB, sizeof(transB));
-
+    // Keep default: A not transposed, B not transposed
     cublasLtMatrixLayout_t Adesc, Bdesc, Cdesc;
-    cublasLtMatrixLayoutCreate(&Adesc, fp8Type, M, K, M);
-    // B is transposed: logical (K,N) but stored as (N,K) with ldb=N
-    cublasLtMatrixLayoutCreate(&Bdesc, fp8Type, N, K, N);
+    cublasLtMatrixLayoutCreate(&Adesc, fp8TypeA, M, K, M);
+    cublasLtMatrixLayoutCreate(&Bdesc, fp8TypeB, K, N, K);
     cublasLtMatrixLayoutCreate(&Cdesc, CUDA_R_16BF, M, N, M);
 
     float alpha = 1.0f, beta = 0.0f;
@@ -184,6 +181,7 @@ static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
     cublasLtMatmulPreferenceSetAttribute(preference,
         CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceSize, sizeof(workspaceSize));
 
+    // Try to get heuristic
     int returnedResults = 0;
     cublasLtMatmulHeuristicResult_t heuristicResult;
     cublasStatus_t heurStatus = cublasLtMatmulAlgoGetHeuristic(
@@ -191,11 +189,28 @@ static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
         Adesc, Bdesc, Cdesc, Cdesc,
         preference, 1, &heuristicResult, &returnedResults);
 
+    float ms = 0.0f;
+
+    if (returnedResults == 0 || heurStatus != CUBLAS_STATUS_SUCCESS) {
+        // Try with transposed B — some FP8 configs require it
+        cublasOperation_t transB = CUBLAS_OP_T;
+        cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSB,
+                                        &transB, sizeof(transB));
+
+        // B transposed: logical (K,N) stored as (N,K) with ldb=N
+        cublasLtMatrixLayoutDestroy(Bdesc);
+        cublasLtMatrixLayoutCreate(&Bdesc, fp8TypeB, N, K, N);
+
+        heurStatus = cublasLtMatmulAlgoGetHeuristic(
+            ltHandle, operationDesc,
+            Adesc, Bdesc, Cdesc, Cdesc,
+            preference, 1, &heuristicResult, &returnedResults);
+    }
+
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    float ms = 0.0f;
     if (returnedResults > 0 && heurStatus == CUBLAS_STATUS_SUCCESS) {
         cudaEventRecord(start);
         cublasStatus_t status = cublasLtMatmul(ltHandle, operationDesc,
@@ -217,9 +232,8 @@ static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
             cudaEventElapsedTime(&ms, start, stop);
         }
     } else {
-        std::cerr << "  No algorithm found for FP8 GEMM (heuristic status=" << heurStatus
-                  << ", results=" << returnedResults << ")" << std::endl;
-        std::cerr << "  This GPU may not support FP8 tensor cores" << std::endl;
+        std::cerr << "  No algorithm found for FP8 GEMM" << std::endl;
+        std::cerr << "  Tried both NN and NT layouts (heuristic status=" << heurStatus << ")" << std::endl;
     }
 
     cublasLtMatmulPreferenceDestroy(preference);
@@ -367,8 +381,13 @@ public:
         std::cerr << "  Running gemm_cublas_fp8 [cuda/" << fp8Name
                   << "/throughput (tensor cores)] M=N=K=" << M << std::endl;
 
+        cudaDataType_t fp8TypeA = (config.precision == Precision::FP8_E4M3)
+                                   ? CUDA_R_8F_E4M3 : CUDA_R_8F_E5M2;
+        // Standard pattern: A and B same type (or E4M3 for A, E5M2 for B)
+        cudaDataType_t fp8TypeB = fp8TypeA;
+
         // Test if this actually works before running trials
-        float test_ms = run_gemm_fp8(fp8Type, M, N, K);
+        float test_ms = run_gemm_fp8(fp8TypeA, fp8TypeB, M, N, K);
         if (test_ms <= 0) {
             std::cerr << "  " << fp8Name << " GEMM not supported on this device — skipping" << std::endl;
             KernelResult result;
@@ -377,13 +396,13 @@ public:
 
         // Warmup
         for (int w = 0; w < 3; w++) {
-            run_gemm_fp8(fp8Type, M, N, K);
+            run_gemm_fp8(fp8TypeA, fp8TypeB, M, N, K);
         }
 
         std::vector<double> times;
         times.reserve(measurement_trials);
         for (int t = 0; t < measurement_trials; t++) {
-            float ms = run_gemm_fp8(fp8Type, M, N, K);
+            float ms = run_gemm_fp8(fp8TypeA, fp8TypeB, M, N, K);
             if (ms > 0) times.push_back(static_cast<double>(ms));
         }
 

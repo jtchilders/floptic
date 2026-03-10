@@ -283,10 +283,7 @@ int main(int argc, char* argv[]) {
         std::cerr << std::endl;
     }
 
-    // Write JSON/file report
-    if (!opts.output_path.empty()) {
-        std::cerr << "Report written to: " << opts.output_path << std::endl;
-    }
+    // Write JSON report to file if --output was specified
     write_json_report(report, opts.output_path);
 
     return 0;

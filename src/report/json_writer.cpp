@@ -102,21 +102,20 @@ nlohmann::json report_to_json(const Report& report) {
 }
 
 void write_json_report(const Report& report, const std::string& output_path) {
+    if (output_path.empty()) {
+        // No output file specified — summary table already printed to stderr
+        return;
+    }
+
     auto j = report_to_json(report);
     std::string pretty = j.dump(2);
 
-    if (output_path.empty()) {
-        std::cout << pretty << std::endl;
-    } else {
-        std::ofstream ofs(output_path);
-        if (!ofs.is_open()) {
-            std::cerr << "ERROR: Cannot open output file: " << output_path << std::endl;
-            std::cout << pretty << std::endl;
-            return;
-        }
-        ofs << pretty << std::endl;
-        std::cerr << "Report written to: " << output_path << std::endl;
+    std::ofstream ofs(output_path);
+    if (!ofs.is_open()) {
+        std::cerr << "ERROR: Cannot open output file: " << output_path << std::endl;
+        return;
     }
+    ofs << pretty << std::endl;
 }
 
 } // namespace floptic

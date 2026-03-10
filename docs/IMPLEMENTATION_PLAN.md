@@ -55,16 +55,7 @@ floptic/
 │   │   ├── scalar/
 │   │   │   ├── scalar_fma_cuda.cu      # CUDA scalar FMA
 │   │   │   ├── scalar_fma_hip.cpp      # HIP scalar FMA
-│   │   │   ├── scalar_fma_cpu.cpp      # CPU scalar FMA (OpenMP + intrinsics)
-│   │   │   ├── scalar_div_cuda.cu
-│   │   │   ├── scalar_div_hip.cpp
-│   │   │   ├── scalar_div_cpu.cpp
-│   │   │   ├── scalar_sqrt_cuda.cu
-│   │   │   ├── scalar_sqrt_hip.cpp
-│   │   │   ├── scalar_sqrt_cpu.cpp
-│   │   │   ├── scalar_transcendental_cuda.cu   # sin, cos, exp, log
-│   │   │   ├── scalar_transcendental_hip.cpp
-│   │   │   └── scalar_transcendental_cpu.cpp
+│   │   │   └── scalar_fma_cpu.cpp      # CPU scalar FMA (OpenMP + intrinsics)
 │   │   │
 │   │   ├── vector/
 │   │   │   ├── vector_fma_cuda.cu
@@ -386,19 +377,12 @@ std::vector<DeviceInfo> discover_devices();
 ### Phase 2: Scalar & Vector Kernels (Weeks 3-4)
 **Goal**: Complete scalar suite, vector kernels, CPU backend
 
-#### 2.1 Remaining Scalar Kernels
-- [ ] `scalar_div`: Division throughput/latency
-  - Same structure as FMA: independent chains (throughput) vs dependent (latency)
-  - Values chosen to avoid denormals and infinities
-  - FLOP count: 1 FLOP per division
-- [ ] `scalar_sqrt`: Square root
-  - GPU: `sqrt()` / `sqrtf()` / `hsqrt()`
-  - CPU: `std::sqrt` / `_mm256_sqrt_pd`
-  - FLOP count: 1 FLOP per sqrt
-- [ ] `scalar_transcendental`: sin, cos, exp, log
-  - GPU: measure both fast-math (`__sinf`) and IEEE (`sinf`) variants
-  - Report as separate sub-kernels: `scalar_sin_fast`, `scalar_sin_ieee`
-  - FLOP count: 1 FLOP per transcendental call (conventional)
+#### 2.1 Scalar Kernels
+- [x] `scalar_fma`: FMA throughput/latency — DONE (FP64, FP32, FP16, BF16 on CUDA + CPU)
+- ~~`scalar_div`, `scalar_sqrt`, `scalar_transcendental`~~: Removed from scope.
+  These use different hardware units (SFU, dedicated divider) but don't illuminate
+  precision ratios beyond what scalar FMA already captures. Re-add if a specific
+  application profiling need arises.
 
 #### 2.2 Vector Kernels
 - [ ] `vector_fma`: Streaming `c[i] = a[i] * b[i] + c[i]`
@@ -605,8 +589,7 @@ Matrix/sparse kernels run in throughput mode only (inherently parallel).
 |-----------|-------|
 | FMA (a×b+c) | 2 |
 | ADD, MUL | 1 |
-| DIV, SQRT | 1 |
-| Transcendental (sin, exp, ...) | 1 |
+| AXPY (y = a×x + y, N elements) | 2×N |
 | GEMM (M×N×K) | 2×M×N×K |
 | SpMV (NNZ non-zeros) | 2×NNZ |
 | Ozaki GEMM (emulated) | raw: K² low-prec GEMMs; effective: 2×M×N×K |

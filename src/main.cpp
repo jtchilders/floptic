@@ -11,14 +11,20 @@
 namespace floptic {
     namespace force_link {
         extern void scalar_fma_cpu_link();
+        extern void vector_axpy_cpu_link();
 #ifdef FLOPTIC_HAS_CUDA
         extern void scalar_fma_cuda_link();
+        extern void vector_axpy_cuda_link();
+        extern void gemm_cublas_link();
 #endif
     }
     static void force_link_all() {
         force_link::scalar_fma_cpu_link();
+        force_link::vector_axpy_cpu_link();
 #ifdef FLOPTIC_HAS_CUDA
         force_link::scalar_fma_cuda_link();
+        force_link::vector_axpy_cuda_link();
+        force_link::gemm_cublas_link();
 #endif
     }
 }

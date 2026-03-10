@@ -157,7 +157,11 @@ std::vector<DeviceInfo> discover_cuda_devices() {
             dev.supported_precisions.push_back(Precision::BF16);
         }
 
-        // TF32: only via tensor cores / cuBLAS, not a real scalar type
+        // TF32: tensor cores via cuBLAS (Ampere+)
+        if (props.major >= 8) {
+            dev.supported_precisions.push_back(Precision::TF32);
+        }
+
         // INT8: supported on CUDA cores via DP4A from compute >= 6.1
 
         // --- Features ---

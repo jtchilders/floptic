@@ -31,20 +31,44 @@ static void check_cuda_8(cudaError_t err, const char* msg) {
 // Input: INT8, Output: INT32, Compute: INT32
 // ============================================================================
 
+// Persistent handles to avoid create/destroy overhead per call
+static cublasLtHandle_t g_ltHandle_int8 = nullptr;
+static void* g_workspace_int8 = nullptr;
+static size_t g_workspaceSize_int8 = 64 * 1024 * 1024;  // 64 MB
+
+// Persistent device buffers for INT8
+static int8_t* g_d_A_int8 = nullptr;
+static int8_t* g_d_B_int8 = nullptr;
+static int32_t* g_d_C_int8 = nullptr;
+static int g_M_int8 = 0, g_N_int8 = 0, g_K_int8 = 0;
+
+static void setup_int8(int M, int N, int K) {
+    if (g_M_int8 == M && g_N_int8 == N && g_K_int8 == K && g_ltHandle_int8)
+        return;
+
+    // Cleanup old
+    if (g_d_A_int8) cudaFree(g_d_A_int8);
+    if (g_d_B_int8) cudaFree(g_d_B_int8);
+    if (g_d_C_int8) cudaFree(g_d_C_int8);
+    if (g_workspace_int8) cudaFree(g_workspace_int8);
+    if (g_ltHandle_int8) cublasLtDestroy(g_ltHandle_int8);
+
+    g_M_int8 = M; g_N_int8 = N; g_K_int8 = K;
+
+    check_cuda_8(cudaMalloc(&g_d_A_int8, (size_t)M * K), "alloc A int8");
+    check_cuda_8(cudaMalloc(&g_d_B_int8, (size_t)K * N), "alloc B int8");
+    check_cuda_8(cudaMalloc(&g_d_C_int8, (size_t)M * N * sizeof(int32_t)), "alloc C int8");
+    check_cuda_8(cudaMalloc(&g_workspace_int8, g_workspaceSize_int8), "alloc workspace");
+
+    cudaMemset(g_d_A_int8, 1, (size_t)M * K);
+    cudaMemset(g_d_B_int8, 1, (size_t)K * N);
+    cudaMemset(g_d_C_int8, 0, (size_t)M * N * sizeof(int32_t));
+
+    cublasLtCreate(&g_ltHandle_int8);
+}
+
 static float run_gemm_int8(int M, int N, int K) {
-    int8_t *d_A, *d_B;
-    int32_t *d_C;
-
-    check_cuda_8(cudaMalloc(&d_A, (size_t)M * K * sizeof(int8_t)), "alloc A");
-    check_cuda_8(cudaMalloc(&d_B, (size_t)K * N * sizeof(int8_t)), "alloc B");
-    check_cuda_8(cudaMalloc(&d_C, (size_t)M * N * sizeof(int32_t)), "alloc C");
-
-    cudaMemset(d_A, 1, (size_t)M * K);
-    cudaMemset(d_B, 1, (size_t)K * N);
-    cudaMemset(d_C, 0, (size_t)M * N * sizeof(int32_t));
-
-    cublasLtHandle_t ltHandle;
-    cublasLtCreate(&ltHandle);
+    setup_int8(M, N, K);
 
     cublasLtMatmulDesc_t operationDesc;
     cublasLtMatmulDescCreate(&operationDesc, CUBLAS_COMPUTE_32I, CUDA_R_32I);
@@ -56,20 +80,16 @@ static float run_gemm_int8(int M, int N, int K) {
 
     int32_t alpha = 1, beta = 0;
 
-    // Allocate workspace
-    size_t workspaceSize = 32 * 1024 * 1024;  // 32 MB
-    void* d_workspace;
-    cudaMalloc(&d_workspace, workspaceSize);
-
     // Find best algorithm
     cublasLtMatmulPreference_t preference;
     cublasLtMatmulPreferenceCreate(&preference);
     cublasLtMatmulPreferenceSetAttribute(preference,
-        CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceSize, sizeof(workspaceSize));
+        CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
+        &g_workspaceSize_int8, sizeof(g_workspaceSize_int8));
 
     int returnedResults = 0;
     cublasLtMatmulHeuristicResult_t heuristicResult;
-    cublasLtMatmulAlgoGetHeuristic(ltHandle, operationDesc,
+    cublasLtMatmulAlgoGetHeuristic(g_ltHandle_int8, operationDesc,
                                     Adesc, Bdesc, Cdesc, Cdesc,
                                     preference, 1, &heuristicResult, &returnedResults);
 
@@ -80,11 +100,11 @@ static float run_gemm_int8(int M, int N, int K) {
     float ms = 0.0f;
     if (returnedResults > 0) {
         cudaEventRecord(start);
-        cublasLtMatmul(ltHandle, operationDesc,
-                        &alpha, d_A, Adesc, d_B, Bdesc,
-                        &beta, d_C, Cdesc, d_C, Cdesc,
+        cublasLtMatmul(g_ltHandle_int8, operationDesc,
+                        &alpha, g_d_A_int8, Adesc, g_d_B_int8, Bdesc,
+                        &beta, g_d_C_int8, Cdesc, g_d_C_int8, Cdesc,
                         &heuristicResult.algo,
-                        d_workspace, workspaceSize, 0);
+                        g_workspace_int8, g_workspaceSize_int8, 0);
         cudaEventRecord(stop);
         cudaEventSynchronize(stop);
         cudaEventElapsedTime(&ms, start, stop);
@@ -97,14 +117,9 @@ static float run_gemm_int8(int M, int N, int K) {
     cublasLtMatrixLayoutDestroy(Bdesc);
     cublasLtMatrixLayoutDestroy(Adesc);
     cublasLtMatmulDescDestroy(operationDesc);
-    cublasLtDestroy(ltHandle);
 
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
-    cudaFree(d_workspace);
-    cudaFree(d_A);
-    cudaFree(d_B);
-    cudaFree(d_C);
 
     return ms;
 }
@@ -122,41 +137,48 @@ static float run_gemm_int8(int M, int N, int K) {
 
 #ifdef FLOPTIC_HAS_FP8_TYPES
 
+// FP8 GEMM: use BF16 output instead of FP16 (better compatibility on Hopper)
+// Also try with a transposed B matrix which some FP8 configs require
+
 static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
-    // FP8 input, FP16 output, FP32 compute
     void *d_A, *d_B;
-    __half *d_C, *d_D;
+    void *d_C;  // Use BF16 for output
 
     check_cuda_8(cudaMalloc(&d_A, (size_t)M * K), "alloc A fp8");
     check_cuda_8(cudaMalloc(&d_B, (size_t)K * N), "alloc B fp8");
     check_cuda_8(cudaMalloc(&d_C, (size_t)M * N * sizeof(__half)), "alloc C");
-    check_cuda_8(cudaMalloc(&d_D, (size_t)M * N * sizeof(__half)), "alloc D");
 
     cudaMemset(d_A, 0, (size_t)M * K);
     cudaMemset(d_B, 0, (size_t)K * N);
     cudaMemset(d_C, 0, (size_t)M * N * sizeof(__half));
-    cudaMemset(d_D, 0, (size_t)M * N * sizeof(__half));
 
     cublasLtHandle_t ltHandle;
     cublasLtCreate(&ltHandle);
 
+    // Try multiple configurations that Hopper FP8 supports
+    // Config 1: A=fp8, B=fp8, C=D=bf16, compute=fp32
+    // Config 2: A=fp8_e4m3, B=fp8_e5m2, C=D=bf16 (mixed FP8)
+
     cublasLtMatmulDesc_t operationDesc;
     cublasLtMatmulDescCreate(&operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F);
 
-    cublasLtMatrixLayout_t Adesc, Bdesc, Cdesc, Ddesc;
+    // Some FP8 configs require B to be transposed
+    cublasOperation_t transB = CUBLAS_OP_T;
+    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSB,
+                                    &transB, sizeof(transB));
+
+    cublasLtMatrixLayout_t Adesc, Bdesc, Cdesc;
     cublasLtMatrixLayoutCreate(&Adesc, fp8Type, M, K, M);
-    cublasLtMatrixLayoutCreate(&Bdesc, fp8Type, K, N, K);
-    cublasLtMatrixLayoutCreate(&Cdesc, CUDA_R_16F, M, N, M);
-    cublasLtMatrixLayoutCreate(&Ddesc, CUDA_R_16F, M, N, M);
+    // B is transposed: logical (K,N) but stored as (N,K) with ldb=N
+    cublasLtMatrixLayoutCreate(&Bdesc, fp8Type, N, K, N);
+    cublasLtMatrixLayoutCreate(&Cdesc, CUDA_R_16BF, M, N, M);
 
     float alpha = 1.0f, beta = 0.0f;
 
-    // Workspace
-    size_t workspaceSize = 32 * 1024 * 1024;
+    size_t workspaceSize = 64 * 1024 * 1024;
     void* d_workspace;
     cudaMalloc(&d_workspace, workspaceSize);
 
-    // Find best algorithm
     cublasLtMatmulPreference_t preference;
     cublasLtMatmulPreferenceCreate(&preference);
     cublasLtMatmulPreferenceSetAttribute(preference,
@@ -166,7 +188,7 @@ static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
     cublasLtMatmulHeuristicResult_t heuristicResult;
     cublasStatus_t heurStatus = cublasLtMatmulAlgoGetHeuristic(
         ltHandle, operationDesc,
-        Adesc, Bdesc, Cdesc, Ddesc,
+        Adesc, Bdesc, Cdesc, Cdesc,
         preference, 1, &heuristicResult, &returnedResults);
 
     cudaEvent_t start, stop;
@@ -182,14 +204,14 @@ static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
                                                 d_B, Bdesc,
                                                 &beta,
                                                 d_C, Cdesc,
-                                                d_D, Ddesc,
+                                                d_C, Cdesc,
                                                 &heuristicResult.algo,
                                                 d_workspace, workspaceSize, 0);
         cudaEventRecord(stop);
         cudaEventSynchronize(stop);
 
         if (status != CUBLAS_STATUS_SUCCESS) {
-            std::cerr << "  cublasLtMatmul FP8 failed (status=" << status << ")" << std::endl;
+            std::cerr << "  cublasLtMatmul FP8 exec failed (status=" << status << ")" << std::endl;
             ms = 0.0f;
         } else {
             cudaEventElapsedTime(&ms, start, stop);
@@ -201,7 +223,6 @@ static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
     }
 
     cublasLtMatmulPreferenceDestroy(preference);
-    cublasLtMatrixLayoutDestroy(Ddesc);
     cublasLtMatrixLayoutDestroy(Cdesc);
     cublasLtMatrixLayoutDestroy(Bdesc);
     cublasLtMatrixLayoutDestroy(Adesc);
@@ -214,7 +235,6 @@ static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
     cudaFree(d_A);
     cudaFree(d_B);
     cudaFree(d_C);
-    cudaFree(d_D);
 
     return ms;
 }

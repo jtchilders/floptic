@@ -58,6 +58,7 @@ if(FLOPTIC_HAS_CUDA)
         src/harness/timer_cuda.cu
         src/kernels/scalar/scalar_fma_cuda.cu
         src/kernels/vector/vector_axpy_cuda.cu
+        src/kernels/vector/stream_triad_cuda.cu
         src/kernels/matrix/gemm_cublas.cu
     )
     target_include_directories(floptic_cuda PUBLIC include)

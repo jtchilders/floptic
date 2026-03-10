@@ -137,38 +137,58 @@ static float run_gemm_int8(int M, int N, int K) {
 
 #ifdef FLOPTIC_HAS_FP8_TYPES
 
-// FP8 GEMM via cublasLtMatmul
-// The standard Hopper FP8 pattern:
-//   A = FP8 E4M3 (col-major), B = FP8 E4M3 (col-major), C/D = BF16
-//   Compute = FP32
-// Supports both E4M3 and E5M2 (user-selected)
+// FP8 GEMM via cublasLtMatmul — following NVIDIA's official LtFp8Matmul sample:
+//   D (FP8 E4M3) = alpha * A (FP8) × B (FP8) + beta * C (BF16)
+//   With per-tensor scaling factors (REQUIRED for FP8)
+//   C and D are SEPARATE buffers with different types
 
-static float run_gemm_fp8(cudaDataType_t fp8TypeA, cudaDataType_t fp8TypeB,
-                           int M, int N, int K) {
-    void *d_A, *d_B;
-    void *d_C;
+static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
+    void *d_A, *d_B, *d_D;  // FP8
+    void *d_C;               // BF16 (bias)
 
     check_cuda_8(cudaMalloc(&d_A, (size_t)M * K), "alloc A fp8");
     check_cuda_8(cudaMalloc(&d_B, (size_t)K * N), "alloc B fp8");
-    // Output as BF16
     check_cuda_8(cudaMalloc(&d_C, (size_t)M * N * 2), "alloc C bf16");
+    check_cuda_8(cudaMalloc(&d_D, (size_t)M * N), "alloc D fp8");
 
-    cudaMemset(d_A, 0x38, (size_t)M * K);  // ~0.5 in FP8 E4M3
+    cudaMemset(d_A, 0x38, (size_t)M * K);
     cudaMemset(d_B, 0x38, (size_t)K * N);
     cudaMemset(d_C, 0, (size_t)M * N * 2);
+    cudaMemset(d_D, 0, (size_t)M * N);
+
+    // Per-tensor scaling factors (device pointers) — all set to 1.0 for benchmarking
+    float *d_a_scale, *d_b_scale, *d_c_scale, *d_d_scale, *d_amax_d;
+    float h_one = 1.0f, h_zero = 0.0f;
+    cudaMalloc(&d_a_scale, sizeof(float));
+    cudaMalloc(&d_b_scale, sizeof(float));
+    cudaMalloc(&d_c_scale, sizeof(float));
+    cudaMalloc(&d_d_scale, sizeof(float));
+    cudaMalloc(&d_amax_d, sizeof(float));
+    cudaMemcpy(d_a_scale, &h_one, sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b_scale, &h_one, sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_c_scale, &h_one, sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_d_scale, &h_one, sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_amax_d, &h_zero, sizeof(float), cudaMemcpyHostToDevice);
 
     cublasLtHandle_t ltHandle;
     cublasLtCreate(&ltHandle);
 
-    // D = alpha * (A x B) + beta * C
     cublasLtMatmulDesc_t operationDesc;
     cublasLtMatmulDescCreate(&operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F);
 
-    // Keep default: A not transposed, B not transposed
-    cublasLtMatrixLayout_t Adesc, Bdesc, Cdesc;
-    cublasLtMatrixLayoutCreate(&Adesc, fp8TypeA, M, K, M);
-    cublasLtMatrixLayoutCreate(&Bdesc, fp8TypeB, K, N, K);
+    // Set per-tensor scaling attributes (required for FP8)
+    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_A_SCALE_POINTER, &d_a_scale, sizeof(d_a_scale));
+    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_B_SCALE_POINTER, &d_b_scale, sizeof(d_b_scale));
+    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_C_SCALE_POINTER, &d_c_scale, sizeof(d_c_scale));
+    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_D_SCALE_POINTER, &d_d_scale, sizeof(d_d_scale));
+    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_AMAX_D_POINTER, &d_amax_d, sizeof(d_amax_d));
+
+    // A=FP8(M,K), B=FP8(K,N), C=BF16(M,N), D=FP8(M,N)
+    cublasLtMatrixLayout_t Adesc, Bdesc, Cdesc, Ddesc;
+    cublasLtMatrixLayoutCreate(&Adesc, fp8Type, M, K, M);
+    cublasLtMatrixLayoutCreate(&Bdesc, fp8Type, K, N, K);
     cublasLtMatrixLayoutCreate(&Cdesc, CUDA_R_16BF, M, N, M);
+    cublasLtMatrixLayoutCreate(&Ddesc, fp8Type, M, N, M);
 
     float alpha = 1.0f, beta = 0.0f;
 
@@ -181,36 +201,18 @@ static float run_gemm_fp8(cudaDataType_t fp8TypeA, cudaDataType_t fp8TypeB,
     cublasLtMatmulPreferenceSetAttribute(preference,
         CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceSize, sizeof(workspaceSize));
 
-    // Try to get heuristic
     int returnedResults = 0;
     cublasLtMatmulHeuristicResult_t heuristicResult;
     cublasStatus_t heurStatus = cublasLtMatmulAlgoGetHeuristic(
         ltHandle, operationDesc,
-        Adesc, Bdesc, Cdesc, Cdesc,
+        Adesc, Bdesc, Cdesc, Ddesc,  // Note: Ddesc for output, not Cdesc
         preference, 1, &heuristicResult, &returnedResults);
-
-    float ms = 0.0f;
-
-    if (returnedResults == 0 || heurStatus != CUBLAS_STATUS_SUCCESS) {
-        // Try with transposed B — some FP8 configs require it
-        cublasOperation_t transB = CUBLAS_OP_T;
-        cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSB,
-                                        &transB, sizeof(transB));
-
-        // B transposed: logical (K,N) stored as (N,K) with ldb=N
-        cublasLtMatrixLayoutDestroy(Bdesc);
-        cublasLtMatrixLayoutCreate(&Bdesc, fp8TypeB, N, K, N);
-
-        heurStatus = cublasLtMatmulAlgoGetHeuristic(
-            ltHandle, operationDesc,
-            Adesc, Bdesc, Cdesc, Cdesc,
-            preference, 1, &heuristicResult, &returnedResults);
-    }
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
+    float ms = 0.0f;
     if (returnedResults > 0 && heurStatus == CUBLAS_STATUS_SUCCESS) {
         cudaEventRecord(start);
         cublasStatus_t status = cublasLtMatmul(ltHandle, operationDesc,
@@ -218,8 +220,8 @@ static float run_gemm_fp8(cudaDataType_t fp8TypeA, cudaDataType_t fp8TypeB,
                                                 d_A, Adesc,
                                                 d_B, Bdesc,
                                                 &beta,
-                                                d_C, Cdesc,
-                                                d_C, Cdesc,
+                                                d_C, Cdesc,   // C (bias, BF16)
+                                                d_D, Ddesc,   // D (output, FP8)
                                                 &heuristicResult.algo,
                                                 d_workspace, workspaceSize, 0);
         cudaEventRecord(stop);
@@ -232,11 +234,11 @@ static float run_gemm_fp8(cudaDataType_t fp8TypeA, cudaDataType_t fp8TypeB,
             cudaEventElapsedTime(&ms, start, stop);
         }
     } else {
-        std::cerr << "  No algorithm found for FP8 GEMM" << std::endl;
-        std::cerr << "  Tried both NN and NT layouts (heuristic status=" << heurStatus << ")" << std::endl;
+        std::cerr << "  No algorithm found for FP8 GEMM (status=" << heurStatus << ")" << std::endl;
     }
 
     cublasLtMatmulPreferenceDestroy(preference);
+    cublasLtMatrixLayoutDestroy(Ddesc);
     cublasLtMatrixLayoutDestroy(Cdesc);
     cublasLtMatrixLayoutDestroy(Bdesc);
     cublasLtMatrixLayoutDestroy(Adesc);
@@ -249,6 +251,12 @@ static float run_gemm_fp8(cudaDataType_t fp8TypeA, cudaDataType_t fp8TypeB,
     cudaFree(d_A);
     cudaFree(d_B);
     cudaFree(d_C);
+    cudaFree(d_D);
+    cudaFree(d_a_scale);
+    cudaFree(d_b_scale);
+    cudaFree(d_c_scale);
+    cudaFree(d_d_scale);
+    cudaFree(d_amax_d);
 
     return ms;
 }
@@ -381,13 +389,11 @@ public:
         std::cerr << "  Running gemm_cublas_fp8 [cuda/" << fp8Name
                   << "/throughput (tensor cores)] M=N=K=" << M << std::endl;
 
-        cudaDataType_t fp8TypeA = (config.precision == Precision::FP8_E4M3)
-                                   ? CUDA_R_8F_E4M3 : CUDA_R_8F_E5M2;
-        // Standard pattern: A and B same type (or E4M3 for A, E5M2 for B)
-        cudaDataType_t fp8TypeB = fp8TypeA;
+        cudaDataType_t fp8Type = (config.precision == Precision::FP8_E4M3)
+                                  ? CUDA_R_8F_E4M3 : CUDA_R_8F_E5M2;
 
         // Test if this actually works before running trials
-        float test_ms = run_gemm_fp8(fp8TypeA, fp8TypeB, M, N, K);
+        float test_ms = run_gemm_fp8(fp8Type, M, N, K);
         if (test_ms <= 0) {
             std::cerr << "  " << fp8Name << " GEMM not supported on this device — skipping" << std::endl;
             KernelResult result;
@@ -396,13 +402,13 @@ public:
 
         // Warmup
         for (int w = 0; w < 3; w++) {
-            run_gemm_fp8(fp8TypeA, fp8TypeB, M, N, K);
+            run_gemm_fp8(fp8Type, M, N, K);
         }
 
         std::vector<double> times;
         times.reserve(measurement_trials);
         for (int t = 0; t < measurement_trials; t++) {
-            float ms = run_gemm_fp8(fp8TypeA, fp8TypeB, M, N, K);
+            float ms = run_gemm_fp8(fp8Type, M, N, K);
             if (ms > 0) times.push_back(static_cast<double>(ms));
         }
 

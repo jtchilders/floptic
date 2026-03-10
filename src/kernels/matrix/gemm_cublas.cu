@@ -301,10 +301,10 @@ static std::string peak_key_for(Precision p, const DeviceInfo& device) {
             }
             return "FP64";
         }
-        case Precision::FP32: return "FP32";       // CUDA core SGEMM
+        case Precision::FP32: return "FP32";       // CUDA core SGEMM (no TC by default)
         case Precision::FP16: return "FP16_TC";    // tensor core HGEMM
         case Precision::BF16: return "FP16_TC";    // tensor core (same rate as FP16)
-        case Precision::TF32: return "FP16_TC";    // TF32 on tensor cores
+        case Precision::TF32: return "TF32_TC";    // TF32 on tensor cores
         default: return "FP32";
     }
 }

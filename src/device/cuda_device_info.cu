@@ -106,6 +106,20 @@ static double tc_fp16_fma_per_sm_per_clock(int major, int minor) {
     }
 }
 
+// TF32 tensor core: FP32 I/O, TF32 internal (19-bit mantissa)
+// Rate is typically half of FP16 TC rate
+static double tc_tf32_fma_per_sm_per_clock(int major, int minor) {
+    switch (major) {
+        case 7:  return 0;               // No TF32 on Volta/Turing
+        case 8:
+            if (minor == 0) return 512;  // A100: 512 TF32 FMA/SM/clk (half of FP16 TC)
+            return 512;                   // Ada
+        case 9:  return 1024;            // H100: 1024 TF32 FMA/SM/clk
+        case 10: return 1024;            // Blackwell est.
+        default: return 0;
+    }
+}
+
 static double tc_fp64_fma_per_sm_per_clock(int major, int minor) {
     switch (major) {
         case 8:
@@ -170,7 +184,7 @@ std::vector<DeviceInfo> discover_cuda_devices() {
         if (props.major >= 7) {
             dev.features.push_back(Feature::TENSOR_CORES);
         }
-        if (props.major == 8 && props.minor == 0) {
+        if ((props.major == 8 && props.minor == 0) || props.major >= 9) {
             dev.features.push_back(Feature::FP64_TENSOR);
         }
         if (props.major >= 8) {
@@ -197,6 +211,10 @@ std::vector<DeviceInfo> discover_cuda_devices() {
         double tc_fp16 = tc_fp16_fma_per_sm_per_clock(props.major, props.minor);
         if (tc_fp16 > 0)
             dev.theoretical_peak_gflops["FP16_TC"] = sms * clock_ghz * tc_fp16 * 2.0;
+
+        double tc_tf32 = tc_tf32_fma_per_sm_per_clock(props.major, props.minor);
+        if (tc_tf32 > 0)
+            dev.theoretical_peak_gflops["TF32_TC"] = sms * clock_ghz * tc_tf32 * 2.0;
 
         double tc_fp64 = tc_fp64_fma_per_sm_per_clock(props.major, props.minor);
         if (tc_fp64 > 0)

@@ -10,7 +10,8 @@ struct CliOptions {
     std::vector<Precision> precisions;      // e.g., {FP64, FP32}
     std::vector<std::string> kernel_categories; // e.g., {"scalar"} or {"all"}
     std::string kernel_name;                // specific kernel, empty = all matching
-    int iterations = 100;                   // measurement trials
+    int trials = 100;                       // measurement trials (repetitions for statistics)
+    int inner_iters = 100000;               // inner loop iterations per trial (work per kernel launch)
     int warmup = 10;                        // warmup iterations
     std::string report_format = "json";     // "json", "csv", "stdout"
     std::string output_path;                // empty = stdout

@@ -120,7 +120,7 @@ int main(int argc, char* argv[]) {
     // Build report
     Report report;
     report.devices = target_devices;
-    report.iterations = opts.iterations;
+    report.iterations = opts.trials;
     report.warmup = opts.warmup;
     report.build_backends = {"cpu"};
 #ifdef FLOPTIC_HAS_CUDA
@@ -151,7 +151,7 @@ int main(int argc, char* argv[]) {
                         KernelConfig config;
                         config.precision = precision;
                         config.mode = mode;
-                        config.iterations = 100000;  // inner loop iterations (work per trial)
+                        config.iterations = opts.inner_iters;
                         config.device_id = device.id;
                         config.threads = opts.cpu_threads;
                         config.gpu_blocks = opts.gpu_blocks;
@@ -162,8 +162,7 @@ int main(int argc, char* argv[]) {
                                   << precision_to_string(precision) << " | "
                                   << mode << " ---" << std::endl;
 
-                        // opts.iterations = number of measurement trials
-                        auto result = kernel->run(config, device, opts.iterations);
+                        auto result = kernel->run(config, device, opts.trials);
 
                         std::cerr << "  Result: " << result.gflops << " GFLOP/s"
                                   << " (median " << result.median_time_ms << " ms"

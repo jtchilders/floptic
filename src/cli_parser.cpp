@@ -22,7 +22,8 @@ void print_usage(const char* progname) {
               << "  --precision=<PREC>   Precisions: fp64, fp32, fp16, all (default: fp64,fp32)\n"
               << "  --kernels=<CAT>      Kernel categories: scalar, vector, matrix, sparse, emulated, all\n"
               << "  --kernel=<NAME>      Run specific kernel by name\n"
-              << "  --iterations=<N>     Measurement trials (default: 100)\n"
+              << "  --trials=<N>         Measurement trials for statistics (default: 100)\n"
+              << "  --inner-iters=<N>    Inner loop iterations per trial (default: 100000)\n"
               << "  --warmup=<N>         Warmup iterations (default: 10)\n"
               << "  --report=<FMT>       Output format: json, stdout (default: json)\n"
               << "  --output=<PATH>      Output file (default: stdout)\n"
@@ -70,8 +71,10 @@ CliOptions parse_args(int argc, char* argv[]) {
             opts.kernel_categories = split(arg.substr(10), ',');
         } else if (arg.rfind("--kernel=", 0) == 0) {
             opts.kernel_name = arg.substr(9);
-        } else if (arg.rfind("--iterations=", 0) == 0) {
-            opts.iterations = std::stoi(arg.substr(13));
+        } else if (arg.rfind("--trials=", 0) == 0) {
+            opts.trials = std::stoi(arg.substr(9));
+        } else if (arg.rfind("--inner-iters=", 0) == 0) {
+            opts.inner_iters = std::stoi(arg.substr(14));
         } else if (arg.rfind("--warmup=", 0) == 0) {
             opts.warmup = std::stoi(arg.substr(9));
         } else if (arg.rfind("--report=", 0) == 0) {

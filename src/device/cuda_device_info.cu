@@ -58,16 +58,16 @@ static double fp16_fma_per_sm_per_clock(int major, int minor) {
 }
 
 // BF16 on CUDA cores
-// Ampere+: BF16 CUDA core rate = same as FP32 (not 2×)
-// Some sources say A100 BF16 CUDA core = FP32 rate; tensor cores are where BF16 shines
+// Ampere+: BF16 CUDA core rate = same as FP16 (2× FP32)
+// Both FP16 and BF16 use the same half-precision FMA pipes
 static double bf16_fma_per_sm_per_clock(int major, int minor) {
     switch (major) {
-        case 7:  return 0;              // No BF16 on Volta/Turing CUDA cores
+        case 7:  return 0;               // No BF16 on Volta/Turing CUDA cores
         case 8:
-            if (minor == 0) return 64;  // A100: same as FP32
-            return 128;                  // Ada
-        case 9:  return 128;            // Hopper
-        case 10: return 128;            // Blackwell est.
+            if (minor == 0) return 128;  // A100: same as FP16 (2× FP32)
+            return 256;                   // Ada
+        case 9:  return 256;             // Hopper
+        case 10: return 256;             // Blackwell est.
         default: return 0;
     }
 }

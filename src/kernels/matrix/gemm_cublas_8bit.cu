@@ -67,70 +67,143 @@ static void setup_int8(int M, int N, int K) {
     cublasLtCreate(&g_ltHandle_int8);
 }
 
-static float run_gemm_int8(int M, int N, int K) {
+// Cached best algorithm after auto-tuning
+static cublasLtMatmulAlgo_t g_bestAlgo_int8;
+static bool g_hasBestAlgo_int8 = false;
+static cublasLtMatmulDesc_t g_opDesc_int8 = nullptr;
+static cublasLtMatrixLayout_t g_Adesc_int8 = nullptr;
+static cublasLtMatrixLayout_t g_Bdesc_int8 = nullptr;
+static cublasLtMatrixLayout_t g_Cdesc_int8 = nullptr;
+
+static void autotune_int8(int M, int N, int K) {
     setup_int8(M, N, K);
 
-    cublasLtMatmulDesc_t operationDesc;
-    cublasLtMatmulDescCreate(&operationDesc, CUBLAS_COMPUTE_32I, CUDA_R_32I);
+    if (g_opDesc_int8) cublasLtMatmulDescDestroy(g_opDesc_int8);
+    if (g_Adesc_int8) cublasLtMatrixLayoutDestroy(g_Adesc_int8);
+    if (g_Bdesc_int8) cublasLtMatrixLayoutDestroy(g_Bdesc_int8);
+    if (g_Cdesc_int8) cublasLtMatrixLayoutDestroy(g_Cdesc_int8);
 
-    cublasLtMatrixLayout_t Adesc, Bdesc, Cdesc;
-    cublasLtMatrixLayoutCreate(&Adesc, CUDA_R_8I, M, K, M);
-    cublasLtMatrixLayoutCreate(&Bdesc, CUDA_R_8I, K, N, K);
-    cublasLtMatrixLayoutCreate(&Cdesc, CUDA_R_32I, M, N, M);
+    cublasLtMatmulDescCreate(&g_opDesc_int8, CUBLAS_COMPUTE_32I, CUDA_R_32I);
+    cublasLtMatrixLayoutCreate(&g_Adesc_int8, CUDA_R_8I, M, K, M);
+    cublasLtMatrixLayoutCreate(&g_Bdesc_int8, CUDA_R_8I, K, N, K);
+    cublasLtMatrixLayoutCreate(&g_Cdesc_int8, CUDA_R_32I, M, N, M);
 
     int32_t alpha = 1, beta = 0;
 
-    // Find best algorithm
     cublasLtMatmulPreference_t preference;
     cublasLtMatmulPreferenceCreate(&preference);
     cublasLtMatmulPreferenceSetAttribute(preference,
         CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
         &g_workspaceSize_int8, sizeof(g_workspaceSize_int8));
 
+    // Request many algorithms for auto-tuning
+    const int maxAlgos = 32;
     int returnedResults = 0;
-    cublasLtMatmulHeuristicResult_t heuristicResult;
-    cublasLtMatmulAlgoGetHeuristic(g_ltHandle_int8, operationDesc,
-                                    Adesc, Bdesc, Cdesc, Cdesc,
-                                    preference, 1, &heuristicResult, &returnedResults);
+    cublasLtMatmulHeuristicResult_t heuristicResults[maxAlgos];
+    cublasLtMatmulAlgoGetHeuristic(g_ltHandle_int8, g_opDesc_int8,
+                                    g_Adesc_int8, g_Bdesc_int8,
+                                    g_Cdesc_int8, g_Cdesc_int8,
+                                    preference, maxAlgos,
+                                    heuristicResults, &returnedResults);
+
+    std::cerr << "  INT8 auto-tune: " << returnedResults << " algorithms found" << std::endl;
+
+    if (returnedResults == 0) {
+        std::cerr << "  No INT8 algorithms available!" << std::endl;
+        g_hasBestAlgo_int8 = false;
+        cublasLtMatmulPreferenceDestroy(preference);
+        return;
+    }
+
+    // Time each algorithm, pick the fastest
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    float bestTime = 1e30f;
+    int bestIdx = 0;
+
+    for (int i = 0; i < returnedResults; i++) {
+        // Skip if workspace exceeds our allocation
+        if (heuristicResults[i].workspaceSize > g_workspaceSize_int8) continue;
+
+        // Warmup
+        cublasStatus_t status = cublasLtMatmul(g_ltHandle_int8, g_opDesc_int8,
+            &alpha, g_d_A_int8, g_Adesc_int8, g_d_B_int8, g_Bdesc_int8,
+            &beta, g_d_C_int8, g_Cdesc_int8, g_d_C_int8, g_Cdesc_int8,
+            &heuristicResults[i].algo,
+            g_workspace_int8, g_workspaceSize_int8, 0);
+        cudaDeviceSynchronize();
+
+        if (status != CUBLAS_STATUS_SUCCESS) continue;
+
+        // Time 3 runs
+        float totalMs = 0;
+        for (int r = 0; r < 3; r++) {
+            cudaEventRecord(start);
+            cublasLtMatmul(g_ltHandle_int8, g_opDesc_int8,
+                &alpha, g_d_A_int8, g_Adesc_int8, g_d_B_int8, g_Bdesc_int8,
+                &beta, g_d_C_int8, g_Cdesc_int8, g_d_C_int8, g_Cdesc_int8,
+                &heuristicResults[i].algo,
+                g_workspace_int8, g_workspaceSize_int8, 0);
+            cudaEventRecord(stop);
+            cudaEventSynchronize(stop);
+            float ms;
+            cudaEventElapsedTime(&ms, start, stop);
+            totalMs += ms;
+        }
+        float avgMs = totalMs / 3.0f;
+
+        int algoId = 0;
+        cublasLtMatmulAlgoConfigGetAttribute(&heuristicResults[i].algo,
+            CUBLASLT_ALGO_CONFIG_ID, &algoId, sizeof(algoId), nullptr);
+
+        double gflops = (2.0 * M * N * K / 1e9) / (avgMs / 1e3);
+        std::cerr << "    algo " << algoId << ": " << avgMs << " ms ("
+                  << gflops << " GFLOP/s), ws=" << heuristicResults[i].workspaceSize << std::endl;
+
+        if (avgMs < bestTime) {
+            bestTime = avgMs;
+            bestIdx = i;
+        }
+    }
+
+    g_bestAlgo_int8 = heuristicResults[bestIdx].algo;
+    g_hasBestAlgo_int8 = true;
+
+    int bestAlgoId = 0;
+    cublasLtMatmulAlgoConfigGetAttribute(&g_bestAlgo_int8,
+        CUBLASLT_ALGO_CONFIG_ID, &bestAlgoId, sizeof(bestAlgoId), nullptr);
+    std::cerr << "  Best INT8 algo: " << bestAlgoId << " (" << bestTime << " ms)" << std::endl;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    cublasLtMatmulPreferenceDestroy(preference);
+}
+
+static float run_gemm_int8(int M, int N, int K) {
+    if (!g_hasBestAlgo_int8) return 0.0f;
+
+    int32_t alpha = 1, beta = 0;
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    float ms = 0.0f;
-    if (returnedResults > 0) {
-        // Print algo info on first call
-        static bool first_call = true;
-        if (first_call) {
-            int algoId = 0;
-            cublasLtMatmulAlgoConfigGetAttribute(&heuristicResult.algo,
-                CUBLASLT_ALGO_CONFIG_ID, &algoId, sizeof(algoId), nullptr);
-            std::cerr << "  INT8 algo id=" << algoId
-                      << ", workspace=" << heuristicResult.workspaceSize << std::endl;
-            first_call = false;
-        }
-        cudaEventRecord(start);
-        cublasLtMatmul(g_ltHandle_int8, operationDesc,
-                        &alpha, g_d_A_int8, Adesc, g_d_B_int8, Bdesc,
-                        &beta, g_d_C_int8, Cdesc, g_d_C_int8, Cdesc,
-                        &heuristicResult.algo,
-                        g_workspace_int8, g_workspaceSize_int8, 0);
-        cudaEventRecord(stop);
-        cudaEventSynchronize(stop);
-        cudaEventElapsedTime(&ms, start, stop);
-    } else {
-        std::cerr << "  No algorithm found for INT8 GEMM" << std::endl;
-    }
+    cudaEventRecord(start);
+    cublasLtMatmul(g_ltHandle_int8, g_opDesc_int8,
+                    &alpha, g_d_A_int8, g_Adesc_int8, g_d_B_int8, g_Bdesc_int8,
+                    &beta, g_d_C_int8, g_Cdesc_int8, g_d_C_int8, g_Cdesc_int8,
+                    &g_bestAlgo_int8,
+                    g_workspace_int8, g_workspaceSize_int8, 0);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
 
-    cublasLtMatmulPreferenceDestroy(preference);
-    cublasLtMatrixLayoutDestroy(Cdesc);
-    cublasLtMatrixLayoutDestroy(Bdesc);
-    cublasLtMatrixLayoutDestroy(Adesc);
-    cublasLtMatmulDescDestroy(operationDesc);
+    float ms;
+    cudaEventElapsedTime(&ms, start, stop);
 
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
-
     return ms;
 }
 
@@ -325,7 +398,15 @@ public:
         std::cerr << "  Running gemm_cublas_int8 [cuda/INT8/throughput (tensor cores)] M=N=K="
                   << M << std::endl;
 
-        // Warmup
+        // Auto-tune: find best algorithm
+        autotune_int8(M, N, K);
+        if (!g_hasBestAlgo_int8) {
+            std::cerr << "  INT8 GEMM auto-tune failed" << std::endl;
+            KernelResult result;
+            return result;
+        }
+
+        // Warmup with best algo
         for (int w = 0; w < 3; w++) {
             run_gemm_int8(M, N, K);
         }

@@ -17,12 +17,12 @@ static double fp64_fma_per_sm_per_clock(int major, int minor) {
             if (minor == 0) return 32;  // V100: 32 FP64 FMA/SM/clk
             return 2;                    // Turing: 1/32 of FP32
         case 8: // Ampere / Ada
-            if (minor == 0) return 32;  // A100
+            if (minor == 0) return 32;  // A100: 32 FP64 FMA/SM/clk
             if (minor == 6) return 2;   // RTX 3050 etc
             if (minor == 9) return 1;   // RTX 4090: 1/64 of FP32
             return 32;                   // default Ampere datacenter
-        case 9:  return 32;             // H100
-        case 10: return 32;             // B200 estimated
+        case 9:  return 64;             // H100: 64 FP64 FMA/SM/clk (4th gen tensor arch)
+        case 10: return 64;             // B200 estimated
         default: return 4;              // conservative
     }
 }

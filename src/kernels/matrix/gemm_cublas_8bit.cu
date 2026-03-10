@@ -225,21 +225,26 @@ static float run_gemm_int8(int M, int N, int K) {
 //   With per-tensor scaling factors (REQUIRED for FP8)
 //   C and D are SEPARATE buffers with different types
 
+// Try multiple FP8 type combinations to find one that works
+// The heuristic is picky about exact A/B/C/D type combinations
+struct Fp8Config {
+    const char* name;
+    cudaDataType_t aType, bType, cType, dType;
+};
+
 static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
-    void *d_A, *d_B, *d_D;  // FP8
-    void *d_C;               // BF16 (bias)
-
-    check_cuda_8(cudaMalloc(&d_A, (size_t)M * K), "alloc A fp8");
-    check_cuda_8(cudaMalloc(&d_B, (size_t)K * N), "alloc B fp8");
-    check_cuda_8(cudaMalloc(&d_C, (size_t)M * N * 2), "alloc C bf16");
-    check_cuda_8(cudaMalloc(&d_D, (size_t)M * N), "alloc D fp8");
-
+    // Allocate enough for any combination (4 bytes per element max for FP32 output)
+    void *d_A, *d_B, *d_C, *d_D;
+    check_cuda_8(cudaMalloc(&d_A, (size_t)M * K * 4), "alloc A");
+    check_cuda_8(cudaMalloc(&d_B, (size_t)K * N * 4), "alloc B");
+    check_cuda_8(cudaMalloc(&d_C, (size_t)M * N * 4), "alloc C");
+    check_cuda_8(cudaMalloc(&d_D, (size_t)M * N * 4), "alloc D");
     cudaMemset(d_A, 0x38, (size_t)M * K);
     cudaMemset(d_B, 0x38, (size_t)K * N);
-    cudaMemset(d_C, 0, (size_t)M * N * 2);
-    cudaMemset(d_D, 0, (size_t)M * N);
+    cudaMemset(d_C, 0, (size_t)M * N * 4);
+    cudaMemset(d_D, 0, (size_t)M * N * 4);
 
-    // Per-tensor scaling factors (device pointers) — all set to 1.0 for benchmarking
+    // Scaling factors
     float *d_a_scale, *d_b_scale, *d_c_scale, *d_d_scale, *d_amax_d;
     float h_one = 1.0f, h_zero = 0.0f;
     cudaMalloc(&d_a_scale, sizeof(float));
@@ -253,107 +258,109 @@ static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
     cudaMemcpy(d_d_scale, &h_one, sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_amax_d, &h_zero, sizeof(float), cudaMemcpyHostToDevice);
 
-    cublasLtHandle_t ltHandle;
-    cublasLtCreate(&ltHandle);
-
-    cublasLtMatmulDesc_t operationDesc;
-    cublasLtMatmulDescCreate(&operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F);
-
-    // Set per-tensor scaling attributes (required for FP8)
-    cublasStatus_t s;
-    s = cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_A_SCALE_POINTER, &d_a_scale, sizeof(d_a_scale));
-    if (s != CUBLAS_STATUS_SUCCESS) std::cerr << "  SetAttribute A_SCALE failed: " << s << std::endl;
-    s = cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_B_SCALE_POINTER, &d_b_scale, sizeof(d_b_scale));
-    if (s != CUBLAS_STATUS_SUCCESS) std::cerr << "  SetAttribute B_SCALE failed: " << s << std::endl;
-    s = cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_C_SCALE_POINTER, &d_c_scale, sizeof(d_c_scale));
-    if (s != CUBLAS_STATUS_SUCCESS) std::cerr << "  SetAttribute C_SCALE failed: " << s << std::endl;
-    s = cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_D_SCALE_POINTER, &d_d_scale, sizeof(d_d_scale));
-    if (s != CUBLAS_STATUS_SUCCESS) std::cerr << "  SetAttribute D_SCALE failed: " << s << std::endl;
-    s = cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_AMAX_D_POINTER, &d_amax_d, sizeof(d_amax_d));
-    if (s != CUBLAS_STATUS_SUCCESS) std::cerr << "  SetAttribute AMAX_D failed: " << s << std::endl;
-
-    // A=FP8(M,K), B=FP8(K,N), C=BF16(M,N), D=FP8(M,N)
-    cublasLtMatrixLayout_t Adesc, Bdesc, Cdesc, Ddesc;
-    cublasLtMatrixLayoutCreate(&Adesc, fp8Type, M, K, M);
-    cublasLtMatrixLayoutCreate(&Bdesc, fp8Type, K, N, K);
-    cublasLtMatrixLayoutCreate(&Cdesc, CUDA_R_16BF, M, N, M);
-    cublasLtMatrixLayoutCreate(&Ddesc, fp8Type, M, N, M);
-
-    float alpha = 1.0f, beta = 0.0f;
-
     size_t workspaceSize = 64 * 1024 * 1024;
     void* d_workspace;
     cudaMalloc(&d_workspace, workspaceSize);
 
-    cublasLtMatmulPreference_t preference;
-    cublasLtMatmulPreferenceCreate(&preference);
-    cublasLtMatmulPreferenceSetAttribute(preference,
-        CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceSize, sizeof(workspaceSize));
-
-    // Print cuBLASLt version for debugging
-    size_t cublasLtVer = cublasLtGetVersion();
-    std::cerr << "  cublasLt version: " << cublasLtVer << std::endl;
-    std::cerr << "  fp8Type enum value: " << (int)fp8Type << std::endl;
-
-    // Try heuristic with up to 10 algorithms
-    int returnedResults = 0;
-    cublasLtMatmulHeuristicResult_t heuristicResults[10];
-    cublasStatus_t heurStatus = cublasLtMatmulAlgoGetHeuristic(
-        ltHandle, operationDesc,
-        Adesc, Bdesc, Cdesc, Ddesc,
-        preference, 10, heuristicResults, &returnedResults);
-
-    std::cerr << "  Heuristic: status=" << heurStatus << ", results=" << returnedResults << std::endl;
-
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+    // Try all plausible FP8 type combinations
+    Fp8Config configs[] = {
+        // NVIDIA sample pattern: A=E4M3, B=E4M3, C=BF16, D=E4M3
+        {"E4M3/E4M3->BF16/E4M3", CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16BF, CUDA_R_8F_E4M3},
+        // Mixed: A=E4M3, B=E5M2
+        {"E4M3/E5M2->BF16/E4M3", CUDA_R_8F_E4M3, CUDA_R_8F_E5M2, CUDA_R_16BF, CUDA_R_8F_E4M3},
+        // FP16 output instead of BF16
+        {"E4M3/E4M3->FP16/E4M3", CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16F, CUDA_R_8F_E4M3},
+        // FP32 C and D
+        {"E4M3/E4M3->FP32/FP32", CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_32F, CUDA_R_32F},
+        // BF16 C and D (no FP8 output)
+        {"E4M3/E4M3->BF16/BF16", CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16BF, CUDA_R_16BF},
+        // FP16 C and D
+        {"E4M3/E4M3->FP16/FP16", CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16F, CUDA_R_16F},
+        // E5M2 variants
+        {"E5M2/E5M2->BF16/E5M2", CUDA_R_8F_E5M2, CUDA_R_8F_E5M2, CUDA_R_16BF, CUDA_R_8F_E5M2},
+        {"E5M2/E5M2->BF16/BF16", CUDA_R_8F_E5M2, CUDA_R_8F_E5M2, CUDA_R_16BF, CUDA_R_16BF},
+    };
+    int numConfigs = sizeof(configs) / sizeof(configs[0]);
 
     float ms = 0.0f;
-    if (returnedResults > 0 && heurStatus == CUBLAS_STATUS_SUCCESS) {
-        cudaEventRecord(start);
-        cublasStatus_t status = cublasLtMatmul(ltHandle, operationDesc,
-                                                &alpha,
-                                                d_A, Adesc,
-                                                d_B, Bdesc,
-                                                &beta,
-                                                d_C, Cdesc,
-                                                d_D, Ddesc,
-                                                &heuristicResults[0].algo,
-                                                d_workspace, workspaceSize, 0);
-        cudaEventRecord(stop);
-        cudaEventSynchronize(stop);
+    const char* workingConfig = nullptr;
 
-        if (status != CUBLAS_STATUS_SUCCESS) {
-            std::cerr << "  cublasLtMatmul FP8 exec failed (status=" << status << ")" << std::endl;
-            ms = 0.0f;
-        } else {
-            cudaEventElapsedTime(&ms, start, stop);
+    std::cerr << "  cublasLt version: " << cublasLtGetVersion() << std::endl;
+    std::cerr << "  Probing " << numConfigs << " FP8 type combinations:" << std::endl;
+
+    for (int c = 0; c < numConfigs; c++) {
+        cublasLtHandle_t ltHandle;
+        cublasLtCreate(&ltHandle);
+
+        cublasLtMatmulDesc_t opDesc;
+        cublasLtMatmulDescCreate(&opDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F);
+
+        cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_A_SCALE_POINTER, &d_a_scale, sizeof(d_a_scale));
+        cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_B_SCALE_POINTER, &d_b_scale, sizeof(d_b_scale));
+        cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_C_SCALE_POINTER, &d_c_scale, sizeof(d_c_scale));
+        cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_D_SCALE_POINTER, &d_d_scale, sizeof(d_d_scale));
+        cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_AMAX_D_POINTER, &d_amax_d, sizeof(d_amax_d));
+
+        cublasLtMatrixLayout_t Ad, Bd, Cd, Dd;
+        cublasLtMatrixLayoutCreate(&Ad, configs[c].aType, M, K, M);
+        cublasLtMatrixLayoutCreate(&Bd, configs[c].bType, K, N, K);
+        cublasLtMatrixLayoutCreate(&Cd, configs[c].cType, M, N, M);
+        cublasLtMatrixLayoutCreate(&Dd, configs[c].dType, M, N, M);
+
+        cublasLtMatmulPreference_t pref;
+        cublasLtMatmulPreferenceCreate(&pref);
+        cublasLtMatmulPreferenceSetAttribute(pref,
+            CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceSize, sizeof(workspaceSize));
+
+        int nResults = 0;
+        cublasLtMatmulHeuristicResult_t hResult;
+        cublasStatus_t st = cublasLtMatmulAlgoGetHeuristic(
+            ltHandle, opDesc, Ad, Bd, Cd, Dd, pref, 1, &hResult, &nResults);
+
+        std::cerr << "    " << configs[c].name << ": status=" << st << ", algos=" << nResults;
+
+        if (nResults > 0 && st == CUBLAS_STATUS_SUCCESS && ms == 0.0f) {
+            float alpha = 1.0f, beta = 0.0f;
+            cudaEvent_t start, stop;
+            cudaEventCreate(&start);
+            cudaEventCreate(&stop);
+
+            cudaEventRecord(start);
+            cublasStatus_t execSt = cublasLtMatmul(ltHandle, opDesc,
+                &alpha, d_A, Ad, d_B, Bd, &beta, d_C, Cd, d_D, Dd,
+                &hResult.algo, d_workspace, workspaceSize, 0);
+            cudaEventRecord(stop);
+            cudaEventSynchronize(stop);
+
+            if (execSt == CUBLAS_STATUS_SUCCESS) {
+                cudaEventElapsedTime(&ms, start, stop);
+                workingConfig = configs[c].name;
+                std::cerr << " ✓ " << ms << " ms";
+            } else {
+                std::cerr << " exec_fail=" << execSt;
+            }
+            cudaEventDestroy(start);
+            cudaEventDestroy(stop);
         }
-    } else {
-        std::cerr << "  No algorithm found for FP8 GEMM (status=" << heurStatus << ")" << std::endl;
+        std::cerr << std::endl;
+
+        cublasLtMatmulPreferenceDestroy(pref);
+        cublasLtMatrixLayoutDestroy(Dd);
+        cublasLtMatrixLayoutDestroy(Cd);
+        cublasLtMatrixLayoutDestroy(Bd);
+        cublasLtMatrixLayoutDestroy(Ad);
+        cublasLtMatmulDescDestroy(opDesc);
+        cublasLtDestroy(ltHandle);
     }
 
-    cublasLtMatmulPreferenceDestroy(preference);
-    cublasLtMatrixLayoutDestroy(Ddesc);
-    cublasLtMatrixLayoutDestroy(Cdesc);
-    cublasLtMatrixLayoutDestroy(Bdesc);
-    cublasLtMatrixLayoutDestroy(Adesc);
-    cublasLtMatmulDescDestroy(operationDesc);
-    cublasLtDestroy(ltHandle);
+    if (workingConfig) {
+        std::cerr << "  Working FP8 config: " << workingConfig << std::endl;
+    }
 
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
     cudaFree(d_workspace);
-    cudaFree(d_A);
-    cudaFree(d_B);
-    cudaFree(d_C);
-    cudaFree(d_D);
-    cudaFree(d_a_scale);
-    cudaFree(d_b_scale);
-    cudaFree(d_c_scale);
-    cudaFree(d_d_scale);
-    cudaFree(d_amax_d);
+    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C); cudaFree(d_D);
+    cudaFree(d_a_scale); cudaFree(d_b_scale); cudaFree(d_c_scale);
+    cudaFree(d_d_scale); cudaFree(d_amax_d);
 
     return ms;
 }

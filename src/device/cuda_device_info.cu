@@ -109,9 +109,9 @@ static double tc_fp16_fma_per_sm_per_clock(int major, int minor) {
 static double tc_fp64_fma_per_sm_per_clock(int major, int minor) {
     switch (major) {
         case 8:
-            if (minor == 0) return 64;   // A100: FP64 tensor cores
+            if (minor == 0) return 64;   // A100: 64 FP64 TC FMA/SM/clk
             return 0;
-        case 9:  return 64;              // H100 (limited)
+        case 9:  return 128;             // H100: 128 FP64 TC FMA/SM/clk (~67 TFLOP/s)
         default: return 0;               // No FP64 tensor on others
     }
 }

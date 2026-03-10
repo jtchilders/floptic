@@ -285,13 +285,26 @@ static float dispatch_gemm(cublasHandle_t handle, Precision prec, int M, int N, 
 // tensor core peaks
 // ============================================================================
 
-static std::string peak_key_for(Precision p) {
+// Choose the best peak to compare against for each precision.
+// cuBLAS automatically uses tensor cores when available, so we compare
+// against the tensor core peak when it exists and is higher.
+static std::string peak_key_for(Precision p, const DeviceInfo& device) {
     switch (p) {
-        case Precision::FP64: return "FP64";      // CUDA core DGEMM
+        case Precision::FP64: {
+            // cuBLAS uses FP64 tensor cores if available (Ampere+)
+            auto it_tc = device.theoretical_peak_gflops.find("FP64_TC");
+            auto it_cc = device.theoretical_peak_gflops.find("FP64");
+            if (it_tc != device.theoretical_peak_gflops.end() &&
+                it_tc->second > 0 &&
+                (it_cc == device.theoretical_peak_gflops.end() || it_tc->second > it_cc->second)) {
+                return "FP64_TC";
+            }
+            return "FP64";
+        }
         case Precision::FP32: return "FP32";       // CUDA core SGEMM
         case Precision::FP16: return "FP16_TC";    // tensor core HGEMM
         case Precision::BF16: return "FP16_TC";    // tensor core (same rate as FP16)
-        case Precision::TF32: return "FP16_TC";    // TF32 on tensor cores ~= FP16_TC/2
+        case Precision::TF32: return "FP16_TC";    // TF32 on tensor cores
         default: return "FP32";
     }
 }
@@ -398,8 +411,8 @@ public:
         result.gflops = (flops_per_trial / 1e9) / (stats.median_ms / 1e3);
         result.effective_gflops = result.gflops;
 
-        // Peak percent — use tensor core peak for FP16/BF16/TF32
-        std::string pk = peak_key_for(config.precision);
+        // Peak percent — use tensor core peak for FP16/BF16/TF32, and FP64 TC when available
+        std::string pk = peak_key_for(config.precision, device);
         auto it = device.theoretical_peak_gflops.find(pk);
         if (it != device.theoretical_peak_gflops.end() && it->second > 0) {
             result.peak_percent = (result.gflops / it->second) * 100.0;

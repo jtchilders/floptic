@@ -3,6 +3,7 @@
 #include <sstream>
 #include <thread>
 #include <iostream>
+#include <set>
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
@@ -158,6 +159,43 @@ static SimdCaps detect_simd() {
     return caps;
 }
 
+// Detect physical core count
+static int get_physical_cores() {
+#ifdef __APPLE__
+    int cores = 0;
+    size_t len = sizeof(cores);
+    if (sysctlbyname("hw.physicalcpu", &cores, &len, nullptr, 0) == 0)
+        return cores;
+    return 0;
+#else
+    // Linux: count unique physical core IDs from /proc/cpuinfo
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    if (!cpuinfo.is_open()) return 0;
+
+    std::set<std::string> core_ids;
+    std::string line;
+    std::string current_physical_id;
+
+    while (std::getline(cpuinfo, line)) {
+        if (line.find("physical id") != std::string::npos) {
+            auto pos = line.find(':');
+            if (pos != std::string::npos)
+                current_physical_id = line.substr(pos + 2);
+        }
+        if (line.find("core id") != std::string::npos) {
+            auto pos = line.find(':');
+            if (pos != std::string::npos) {
+                // Unique key: physical_id + core_id
+                std::string key = current_physical_id + ":" + line.substr(pos + 2);
+                core_ids.insert(key);
+            }
+        }
+    }
+
+    return core_ids.empty() ? 0 : static_cast<int>(core_ids.size());
+#endif
+}
+
 std::vector<DeviceInfo> discover_cpu_devices() {
     DeviceInfo cpu;
     cpu.id = "cpu:0";
@@ -165,7 +203,11 @@ std::vector<DeviceInfo> discover_cpu_devices() {
     cpu.vendor = detect_vendor();
     cpu.arch = detect_arch();
     cpu.type = "cpu";
-    cpu.compute_units = std::thread::hardware_concurrency();
+    cpu.compute_units = std::thread::hardware_concurrency();  // logical cores
+    cpu.physical_cores = get_physical_cores();
+    if (cpu.physical_cores > 0 && cpu.compute_units > 0) {
+        cpu.threads_per_core = cpu.compute_units / cpu.physical_cores;
+    }
     cpu.clock_mhz = get_cpu_freq_mhz();
     cpu.boost_clock_mhz = cpu.clock_mhz;
 
@@ -189,9 +231,9 @@ std::vector<DeviceInfo> discover_cpu_devices() {
               << (simd.fma3 ? " + FMA" : "")
               << std::endl;
 
-    // Theoretical peak calculation
+    // Theoretical peak calculation — use physical cores (FMA units are shared by SMT threads)
     double clock_ghz = cpu.boost_clock_mhz / 1000.0;
-    int cores = cpu.compute_units;
+    int cores = (cpu.physical_cores > 0) ? cpu.physical_cores : cpu.compute_units;
     if (clock_ghz > 0 && cores > 0) {
         // FMA = 2 FLOPs (multiply + add)
         int fp64_fmas = simd.fp64_fmas_per_cycle(cpu.vendor);
@@ -200,6 +242,9 @@ std::vector<DeviceInfo> discover_cpu_devices() {
         cpu.theoretical_peak_gflops["FP64"] = cores * clock_ghz * fp64_fmas * 2.0;
         cpu.theoretical_peak_gflops["FP32"] = cores * clock_ghz * fp32_fmas * 2.0;
 
+        std::cerr << "  CPU cores: " << cores << " physical"
+                  << " (" << cpu.compute_units << " logical, "
+                  << cpu.threads_per_core << " threads/core)" << std::endl;
         std::cerr << "  CPU theoretical peak: "
                   << cpu.theoretical_peak_gflops["FP64"] << " GFLOP/s FP64, "
                   << cpu.theoretical_peak_gflops["FP32"] << " GFLOP/s FP32"

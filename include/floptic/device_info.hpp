@@ -42,7 +42,9 @@ struct DeviceInfo {
     std::string arch;           // "sm_80", "gfx942", "sapphire_rapids"
     std::string type;           // "gpu", "cpu"
     size_t memory_bytes = 0;
-    int compute_units = 0;      // SMs, CUs, cores
+    int compute_units = 0;      // SMs, CUs, logical cores
+    int physical_cores = 0;     // CPU: physical cores (0 if unknown)
+    int threads_per_core = 1;   // CPU: SMT/HT threads per core
     int clock_mhz = 0;
     int boost_clock_mhz = 0;
     std::vector<Precision> supported_precisions;

@@ -44,6 +44,10 @@ nlohmann::json report_to_json(const Report& report) {
         d["type"] = dev.type;
         d["memory_gb"] = dev.memory_bytes / (1024.0 * 1024.0 * 1024.0);
         d["compute_units"] = dev.compute_units;
+        if (dev.physical_cores > 0) {
+            d["physical_cores"] = dev.physical_cores;
+            d["threads_per_core"] = dev.threads_per_core;
+        }
         d["clock_mhz"] = dev.clock_mhz;
         d["boost_clock_mhz"] = dev.boost_clock_mhz;
 

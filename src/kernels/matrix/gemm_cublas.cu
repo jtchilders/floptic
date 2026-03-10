@@ -41,7 +41,7 @@ static void check_cuda(cudaError_t err, const char* msg) {
 }
 
 // ============================================================================
-// FP64 GEMM: cublasDgemm
+// FP64 GEMM: cublasDgemm (auto-uses tensor cores on Ampere+, IEEE-exact)
 // ============================================================================
 
 static float run_gemm_fp64(cublasHandle_t handle, int M, int N, int K) {
@@ -50,10 +50,6 @@ static float run_gemm_fp64(cublasHandle_t handle, int M, int N, int K) {
     check_cuda(cudaMalloc(&d_B, (size_t)K * N * sizeof(double)), "alloc B");
     check_cuda(cudaMalloc(&d_C, (size_t)M * N * sizeof(double)), "alloc C");
 
-    // Initialize with curand-like pattern (just fill with constants for timing)
-    double val = 1.0 / M;
-    // Use cublasDscal-like approach: fill via kernel or memset
-    // For simplicity, set to zero then rely on beta=0 for first call
     cudaMemset(d_A, 0, (size_t)M * K * sizeof(double));
     cudaMemset(d_B, 0, (size_t)K * N * sizeof(double));
     cudaMemset(d_C, 0, (size_t)M * N * sizeof(double));
@@ -70,6 +66,94 @@ static float run_gemm_fp64(cublasHandle_t handle, int M, int N, int K) {
                  "cublasDgemm");
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
+
+    float ms = 0.0f;
+    cudaEventElapsedTime(&ms, start, stop);
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+
+    return ms;
+}
+
+// ============================================================================
+// FP64 GEMM: CUDA cores only (no tensor cores) — CUBLAS_PEDANTIC_MATH
+// ============================================================================
+
+static float run_gemm_fp64_notc(cublasHandle_t handle, int M, int N, int K) {
+    double *d_A, *d_B, *d_C;
+    check_cuda(cudaMalloc(&d_A, (size_t)M * K * sizeof(double)), "alloc A");
+    check_cuda(cudaMalloc(&d_B, (size_t)K * N * sizeof(double)), "alloc B");
+    check_cuda(cudaMalloc(&d_C, (size_t)M * N * sizeof(double)), "alloc C");
+
+    cudaMemset(d_A, 0, (size_t)M * K * sizeof(double));
+    cudaMemset(d_B, 0, (size_t)K * N * sizeof(double));
+    cudaMemset(d_C, 0, (size_t)M * N * sizeof(double));
+
+    double alpha = 1.0, beta = 0.0;
+
+    // Disable tensor core math
+    cublasSetMathMode(handle, CUBLAS_PEDANTIC_MATH);
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+    check_cublas(cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N,
+                              M, N, K, &alpha, d_A, M, d_B, K, &beta, d_C, M),
+                 "cublasDgemm (no TC)");
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    // Restore default
+    cublasSetMathMode(handle, CUBLAS_DEFAULT_MATH);
+
+    float ms = 0.0f;
+    cudaEventElapsedTime(&ms, start, stop);
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+
+    return ms;
+}
+
+// ============================================================================
+// FP32 GEMM: CUDA cores only (no tensor cores) — CUBLAS_PEDANTIC_MATH
+// ============================================================================
+
+static float run_gemm_fp32_notc(cublasHandle_t handle, int M, int N, int K) {
+    float *d_A, *d_B, *d_C;
+    check_cuda(cudaMalloc(&d_A, (size_t)M * K * sizeof(float)), "alloc A");
+    check_cuda(cudaMalloc(&d_B, (size_t)K * N * sizeof(float)), "alloc B");
+    check_cuda(cudaMalloc(&d_C, (size_t)M * N * sizeof(float)), "alloc C");
+
+    cudaMemset(d_A, 0, (size_t)M * K * sizeof(float));
+    cudaMemset(d_B, 0, (size_t)K * N * sizeof(float));
+    cudaMemset(d_C, 0, (size_t)M * N * sizeof(float));
+
+    float alpha = 1.0f, beta = 0.0f;
+
+    cublasSetMathMode(handle, CUBLAS_PEDANTIC_MATH);
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+    check_cublas(cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N,
+                              M, N, K, &alpha, d_A, M, d_B, K, &beta, d_C, M),
+                 "cublasSgemm (no TC)");
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    cublasSetMathMode(handle, CUBLAS_DEFAULT_MATH);
 
     float ms = 0.0f;
     cudaEventElapsedTime(&ms, start, stop);
@@ -428,8 +512,111 @@ public:
 
 REGISTER_KERNEL(GemmCublas);
 
+// ============================================================================
+// Second kernel: gemm_cublas_notc — forces CUDA cores only (PEDANTIC_MATH)
+// This lets users compare tensor core vs CUDA core GEMM for FP64 and FP32
+// ============================================================================
+
+class GemmCublasNoTC : public KernelBase {
+public:
+    std::string name() const override { return "gemm_cublas_notc"; }
+    std::string category() const override { return "matrix"; }
+    std::string backend() const override { return "cuda"; }
+
+    std::vector<Precision> supported_precisions() const override {
+        return {Precision::FP64, Precision::FP32};
+    }
+
+    std::vector<std::string> supported_modes() const override {
+        return {"throughput"};
+    }
+
+    KernelResult run(const KernelConfig& config,
+                     const DeviceInfo& device,
+                     int measurement_trials) override {
+        int dev_idx = 0;
+        auto pos = device.id.find(':');
+        if (pos != std::string::npos)
+            dev_idx = std::stoi(device.id.substr(pos + 1));
+        cudaSetDevice(dev_idx);
+
+        int M, N, K;
+        if (config.iterations <= 1000) {
+            M = N = K = 1024;
+        } else if (config.iterations <= 10000) {
+            M = N = K = 2048;
+        } else if (config.iterations <= 100000) {
+            M = N = K = 4096;
+        } else {
+            M = N = K = 8192;
+        }
+
+        size_t elem_size = (config.precision == Precision::FP32) ? 4 : 8;
+        size_t needed = 3ULL * M * K * elem_size;
+        while (needed > device.memory_bytes * 0.8 && M > 512) {
+            M /= 2; N /= 2; K /= 2;
+            needed = 3ULL * M * K * elem_size;
+        }
+
+        int64_t flops_per_trial = 2LL * M * N * K;
+
+        std::cerr << "  Running gemm_cublas_notc [cuda/" << precision_to_string(config.precision)
+                  << "/" << config.mode << " (CUDA cores only)] M=N=K=" << M << std::endl;
+
+        cublasHandle_t handle;
+        check_cublas(cublasCreate(&handle), "cublasCreate");
+
+        auto dispatch_notc = [&]() -> float {
+            if (config.precision == Precision::FP64) {
+                return run_gemm_fp64_notc(handle, M, N, K);
+            } else {
+                return run_gemm_fp32_notc(handle, M, N, K);
+            }
+        };
+
+        // Warmup
+        for (int w = 0; w < 3; w++) {
+            dispatch_notc();
+        }
+
+        // Measurement
+        std::vector<double> times;
+        times.reserve(measurement_trials);
+        for (int t = 0; t < measurement_trials; t++) {
+            times.push_back(static_cast<double>(dispatch_notc()));
+        }
+
+        cublasDestroy(handle);
+
+        auto stats = TimingStats::compute(times);
+
+        KernelResult result;
+        result.median_time_ms = stats.median_ms;
+        result.min_time_ms = stats.min_ms;
+        result.max_time_ms = stats.max_ms;
+        result.total_flops = flops_per_trial;
+        result.gflops = (flops_per_trial / 1e9) / (stats.median_ms / 1e3);
+        result.effective_gflops = result.gflops;
+
+        // Compare against CUDA core peak (not TC)
+        std::string pk = precision_to_string(config.precision);
+        auto it = device.theoretical_peak_gflops.find(pk);
+        if (it != device.theoretical_peak_gflops.end() && it->second > 0) {
+            result.peak_percent = (result.gflops / it->second) * 100.0;
+        }
+
+        std::cerr << "  (peak% vs " << pk << " CUDA core theoretical)" << std::endl;
+
+        result.clock_mhz = device.boost_clock_mhz;
+        return result;
+    }
+};
+
+REGISTER_KERNEL(GemmCublasNoTC);
+
 namespace force_link {
     void gemm_cublas_link() {}
+    void gemm_cublas_notc_link() {}
 }
 
 } // namespace floptic

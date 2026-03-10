@@ -16,6 +16,7 @@ namespace floptic {
         extern void scalar_fma_cuda_link();
         extern void vector_axpy_cuda_link();
         extern void gemm_cublas_link();
+        extern void gemm_cublas_notc_link();
 #endif
     }
     static void force_link_all() {
@@ -25,6 +26,7 @@ namespace floptic {
         force_link::scalar_fma_cuda_link();
         force_link::vector_axpy_cuda_link();
         force_link::gemm_cublas_link();
+        force_link::gemm_cublas_notc_link();
 #endif
     }
 }

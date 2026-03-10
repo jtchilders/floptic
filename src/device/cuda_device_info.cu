@@ -6,43 +6,119 @@
 
 namespace floptic {
 
-// FP64 FLOPs per SM per clock for known architectures
-static double fp64_ops_per_sm_per_clock(int major, int minor) {
-    // Values are FMA ops (each = 2 FLOPs), so multiply by 2 for FLOPs
+// ============================================================================
+// Per-architecture ops/SM/clock tables
+// Values are FMA units per SM (each FMA = 2 FLOPs), so final FLOPs = units × 2
+// ============================================================================
+
+static double fp64_fma_per_sm_per_clock(int major, int minor) {
     switch (major) {
         case 7: // Volta / Turing
-            if (minor == 0) return 32 * 2;  // V100: 32 FP64 FMA/SM/clk
-            return 2 * 2;                    // Turing: 2 FP64 FMA/SM/clk
+            if (minor == 0) return 32;  // V100: 32 FP64 FMA/SM/clk
+            return 2;                    // Turing: 1/32 of FP32
         case 8: // Ampere / Ada
-            if (minor == 0) return 32 * 2;  // A100: 32 FP64 FMA/SM/clk
-            if (minor == 6) return 2 * 2;   // RTX 3050 etc
-            if (minor == 9) return 1 * 2;   // RTX 4090: 1 FP64 per 64 FP32 (approx)
-            return 32 * 2;                   // default Ampere datacenter
-        case 9: // Hopper
-            return 32 * 2;                   // H100: 32 FP64 FMA/SM/clk
-        case 10: // Blackwell
-            return 32 * 2;                   // B200: estimated
-        default:
-            return 4 * 2;                    // conservative fallback
+            if (minor == 0) return 32;  // A100
+            if (minor == 6) return 2;   // RTX 3050 etc
+            if (minor == 9) return 1;   // RTX 4090: 1/64 of FP32
+            return 32;                   // default Ampere datacenter
+        case 9:  return 32;             // H100
+        case 10: return 32;             // B200 estimated
+        default: return 4;              // conservative
     }
 }
 
-static double fp32_ops_per_sm_per_clock(int major, int minor) {
+static double fp32_fma_per_sm_per_clock(int major, int minor) {
     switch (major) {
         case 7:
-            if (minor == 0) return 64 * 2;   // V100
-            return 64 * 2;                    // Turing
+            if (minor == 0) return 64;   // V100
+            return 64;                    // Turing
         case 8:
-            if (minor == 0) return 64 * 2;   // A100
-            return 128 * 2;                   // Ada Lovelace
-        case 9:
-            return 128 * 2;                   // H100
-        case 10:
-            return 128 * 2;                   // B200 estimated
-        default:
-            return 64 * 2;
+            if (minor == 0) return 64;   // A100
+            return 128;                   // Ada Lovelace
+        case 9:  return 128;             // H100
+        case 10: return 128;             // B200 estimated
+        default: return 64;
     }
 }
+
+// FP16 on CUDA cores (not tensor cores)
+// On most NVIDIA GPUs, FP16 CUDA core throughput = 2× FP32
+static double fp16_fma_per_sm_per_clock(int major, int minor) {
+    switch (major) {
+        case 7:
+            if (minor == 0) return 128;  // V100: 2× FP32 rate
+            return 128;                   // Turing
+        case 8:
+            if (minor == 0) return 128;  // A100: 2× FP32 rate
+            return 256;                   // Ada
+        case 9:  return 256;             // Hopper
+        case 10: return 256;             // Blackwell est.
+        default: return 128;
+    }
+}
+
+// BF16 on CUDA cores
+// Ampere+: BF16 CUDA core rate = same as FP32 (not 2×)
+// Some sources say A100 BF16 CUDA core = FP32 rate; tensor cores are where BF16 shines
+static double bf16_fma_per_sm_per_clock(int major, int minor) {
+    switch (major) {
+        case 7:  return 0;              // No BF16 on Volta/Turing CUDA cores
+        case 8:
+            if (minor == 0) return 64;  // A100: same as FP32
+            return 128;                  // Ada
+        case 9:  return 128;            // Hopper
+        case 10: return 128;            // Blackwell est.
+        default: return 0;
+    }
+}
+
+// INT8 ops per SM per clock (CUDA cores, via DP4A-style)
+static double int8_ops_per_sm_per_clock(int major, int minor) {
+    switch (major) {
+        case 7:
+            if (minor == 0) return 256;  // V100
+            return 256;                   // Turing
+        case 8:
+            if (minor == 0) return 256;  // A100
+            return 512;                   // Ada
+        case 9:  return 512;             // Hopper
+        case 10: return 512;             // Blackwell est.
+        default: return 256;
+    }
+}
+
+// ============================================================================
+// Tensor core theoretical peaks (GEMM-specific, per SM per clock)
+// These are for reference in the device info; used by matrix kernels
+// ============================================================================
+
+static double tc_fp16_fma_per_sm_per_clock(int major, int minor) {
+    switch (major) {
+        case 7:
+            if (minor == 0) return 512;   // V100
+            return 512;                    // Turing
+        case 8:
+            if (minor == 0) return 1024;  // A100
+            return 1024;                   // Ada (with sparsity: 2048)
+        case 9:  return 2048;             // H100
+        case 10: return 2048;             // B200 est.
+        default: return 512;
+    }
+}
+
+static double tc_fp64_fma_per_sm_per_clock(int major, int minor) {
+    switch (major) {
+        case 8:
+            if (minor == 0) return 64;   // A100: FP64 tensor cores
+            return 0;
+        case 9:  return 64;              // H100 (limited)
+        default: return 0;               // No FP64 tensor on others
+    }
+}
+
+// ============================================================================
+// Device discovery
+// ============================================================================
 
 std::vector<DeviceInfo> discover_cuda_devices() {
     std::vector<DeviceInfo> devices;
@@ -65,32 +141,77 @@ std::vector<DeviceInfo> discover_cuda_devices() {
         dev.type = "gpu";
         dev.memory_bytes = props.totalGlobalMem;
         dev.compute_units = props.multiProcessorCount;
-        dev.clock_mhz = props.clockRate / 1000;         // clockRate is in kHz
-        dev.boost_clock_mhz = props.clockRate / 1000;   // same (boost by default)
+        dev.clock_mhz = props.clockRate / 1000;
+        dev.boost_clock_mhz = props.clockRate / 1000;
 
-        // Supported precisions
+        // --- Supported precisions ---
         dev.supported_precisions = {Precision::FP64, Precision::FP32};
-        // FP16 supported on compute >= 5.3, but we start with FP64/FP32
 
-        // Features based on compute capability
+        // FP16 on CUDA cores: compute >= 5.3 (practical usage from 7.0+)
+        if (props.major >= 7) {
+            dev.supported_precisions.push_back(Precision::FP16);
+        }
+
+        // BF16 on CUDA cores: compute >= 8.0
+        if (props.major >= 8) {
+            dev.supported_precisions.push_back(Precision::BF16);
+        }
+
+        // TF32: only via tensor cores / cuBLAS, not a real scalar type
+        // INT8: supported on CUDA cores via DP4A from compute >= 6.1
+
+        // --- Features ---
+        dev.features.push_back(Feature::FMA_HW);
+
         if (props.major >= 7) {
             dev.features.push_back(Feature::TENSOR_CORES);
         }
-        if (props.major >= 8 && props.minor == 0) {
+        if (props.major == 8 && props.minor == 0) {
             dev.features.push_back(Feature::FP64_TENSOR);
+        }
+        if (props.major >= 8) {
             dev.features.push_back(Feature::STRUCTURED_SPARSITY);
         }
-        dev.features.push_back(Feature::FMA_HW);
 
-        // Theoretical peak GFLOP/s
+        // --- Theoretical peak GFLOP/s ---
         double clock_ghz = dev.boost_clock_mhz / 1000.0;
         int sms = dev.compute_units;
 
-        double fp64_gflops = sms * clock_ghz * fp64_ops_per_sm_per_clock(props.major, props.minor);
-        double fp32_gflops = sms * clock_ghz * fp32_ops_per_sm_per_clock(props.major, props.minor);
+        // CUDA core peaks (scalar/vector operations)
+        dev.theoretical_peak_gflops["FP64"] = sms * clock_ghz * fp64_fma_per_sm_per_clock(props.major, props.minor) * 2.0;
+        dev.theoretical_peak_gflops["FP32"] = sms * clock_ghz * fp32_fma_per_sm_per_clock(props.major, props.minor) * 2.0;
 
-        dev.theoretical_peak_gflops["FP64"] = fp64_gflops;
-        dev.theoretical_peak_gflops["FP32"] = fp32_gflops;
+        double fp16_rate = fp16_fma_per_sm_per_clock(props.major, props.minor);
+        if (fp16_rate > 0)
+            dev.theoretical_peak_gflops["FP16"] = sms * clock_ghz * fp16_rate * 2.0;
+
+        double bf16_rate = bf16_fma_per_sm_per_clock(props.major, props.minor);
+        if (bf16_rate > 0)
+            dev.theoretical_peak_gflops["BF16"] = sms * clock_ghz * bf16_rate * 2.0;
+
+        // Tensor core peaks (for matrix operations)
+        double tc_fp16 = tc_fp16_fma_per_sm_per_clock(props.major, props.minor);
+        if (tc_fp16 > 0)
+            dev.theoretical_peak_gflops["FP16_TC"] = sms * clock_ghz * tc_fp16 * 2.0;
+
+        double tc_fp64 = tc_fp64_fma_per_sm_per_clock(props.major, props.minor);
+        if (tc_fp64 > 0)
+            dev.theoretical_peak_gflops["FP64_TC"] = sms * clock_ghz * tc_fp64 * 2.0;
+
+        // Print summary
+        std::cerr << "  CUDA " << dev.id << " (" << dev.name << "):" << std::endl;
+        std::cerr << "    Arch: " << dev.arch << ", SMs: " << sms
+                  << ", Clock: " << dev.boost_clock_mhz << " MHz" << std::endl;
+        std::cerr << "    Theoretical peaks (CUDA cores):" << std::endl;
+        for (auto& [key, val] : dev.theoretical_peak_gflops) {
+            if (key.find("TC") == std::string::npos)
+                std::cerr << "      " << key << ": " << val << " GFLOP/s" << std::endl;
+        }
+        std::cerr << "    Theoretical peaks (Tensor cores):" << std::endl;
+        for (auto& [key, val] : dev.theoretical_peak_gflops) {
+            if (key.find("TC") != std::string::npos)
+                std::cerr << "      " << key << ": " << val << " GFLOP/s" << std::endl;
+        }
 
         devices.push_back(dev);
     }

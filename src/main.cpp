@@ -215,7 +215,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "╔══════════════════════════════════════════════════════════════════════════════════╗" << std::endl;
         std::cerr << "║  " << dev_id << " (" << dev_name << ")" << std::endl;
         std::cerr << "╠══════════════════════════════════════════════════════════════════════════════════╣" << std::endl;
-        std::cerr << "║ Kernel              │ Prec │ Mode       │    GFLOP/s │ Peak%  │ Median (ms) ║" << std::endl;
+        std::cerr << "║ Kernel              │ Prec │ Mode       │   FLOP/s   │ Peak%  │ Median (ms) ║" << std::endl;
         std::cerr << "╟─────────────────────┼──────┼────────────┼────────────┼────────┼─────────────╢" << std::endl;
 
         std::string prev_kernel;
@@ -230,14 +230,18 @@ int main(int argc, char* argv[]) {
             std::string kname = e->kernel_name;
             if (kname.size() > 19) kname = kname.substr(0, 19);
 
-            // Format GFLOP/s with appropriate units
+            // Format FLOP/s with SI prefix
             char gflops_buf[16];
             if (e->result.gflops >= 1e6) {
-                snprintf(gflops_buf, sizeof(gflops_buf), "%8.1f T", e->result.gflops / 1e3);
-            } else if (e->result.gflops >= 1000) {
-                snprintf(gflops_buf, sizeof(gflops_buf), "%8.1f G", e->result.gflops);
+                snprintf(gflops_buf, sizeof(gflops_buf), "%7.1f P", e->result.gflops / 1e6);
+            } else if (e->result.gflops >= 1e3) {
+                snprintf(gflops_buf, sizeof(gflops_buf), "%7.1f T", e->result.gflops / 1e3);
+            } else if (e->result.gflops >= 1.0) {
+                snprintf(gflops_buf, sizeof(gflops_buf), "%7.1f G", e->result.gflops);
+            } else if (e->result.gflops >= 1e-3) {
+                snprintf(gflops_buf, sizeof(gflops_buf), "%7.1f M", e->result.gflops * 1e3);
             } else {
-                snprintf(gflops_buf, sizeof(gflops_buf), "%8.2f G", e->result.gflops);
+                snprintf(gflops_buf, sizeof(gflops_buf), "%7.3f G", e->result.gflops);
             }
 
             // Format peak%

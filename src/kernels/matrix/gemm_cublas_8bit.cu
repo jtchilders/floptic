@@ -99,6 +99,16 @@ static float run_gemm_int8(int M, int N, int K) {
 
     float ms = 0.0f;
     if (returnedResults > 0) {
+        // Print algo info on first call
+        static bool first_call = true;
+        if (first_call) {
+            int algoId = 0;
+            cublasLtMatmulAlgoConfigGetAttribute(&heuristicResult.algo,
+                CUBLASLT_ALGO_CONFIG_ID, &algoId, sizeof(algoId), nullptr);
+            std::cerr << "  INT8 algo id=" << algoId
+                      << ", workspace=" << heuristicResult.workspaceSize << std::endl;
+            first_call = false;
+        }
         cudaEventRecord(start);
         cublasLtMatmul(g_ltHandle_int8, operationDesc,
                         &alpha, g_d_A_int8, Adesc, g_d_B_int8, Bdesc,
@@ -177,11 +187,17 @@ static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
     cublasLtMatmulDescCreate(&operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F);
 
     // Set per-tensor scaling attributes (required for FP8)
-    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_A_SCALE_POINTER, &d_a_scale, sizeof(d_a_scale));
-    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_B_SCALE_POINTER, &d_b_scale, sizeof(d_b_scale));
-    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_C_SCALE_POINTER, &d_c_scale, sizeof(d_c_scale));
-    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_D_SCALE_POINTER, &d_d_scale, sizeof(d_d_scale));
-    cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_AMAX_D_POINTER, &d_amax_d, sizeof(d_amax_d));
+    cublasStatus_t s;
+    s = cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_A_SCALE_POINTER, &d_a_scale, sizeof(d_a_scale));
+    if (s != CUBLAS_STATUS_SUCCESS) std::cerr << "  SetAttribute A_SCALE failed: " << s << std::endl;
+    s = cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_B_SCALE_POINTER, &d_b_scale, sizeof(d_b_scale));
+    if (s != CUBLAS_STATUS_SUCCESS) std::cerr << "  SetAttribute B_SCALE failed: " << s << std::endl;
+    s = cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_C_SCALE_POINTER, &d_c_scale, sizeof(d_c_scale));
+    if (s != CUBLAS_STATUS_SUCCESS) std::cerr << "  SetAttribute C_SCALE failed: " << s << std::endl;
+    s = cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_D_SCALE_POINTER, &d_d_scale, sizeof(d_d_scale));
+    if (s != CUBLAS_STATUS_SUCCESS) std::cerr << "  SetAttribute D_SCALE failed: " << s << std::endl;
+    s = cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_AMAX_D_POINTER, &d_amax_d, sizeof(d_amax_d));
+    if (s != CUBLAS_STATUS_SUCCESS) std::cerr << "  SetAttribute AMAX_D failed: " << s << std::endl;
 
     // A=FP8(M,K), B=FP8(K,N), C=BF16(M,N), D=FP8(M,N)
     cublasLtMatrixLayout_t Adesc, Bdesc, Cdesc, Ddesc;
@@ -201,12 +217,20 @@ static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
     cublasLtMatmulPreferenceSetAttribute(preference,
         CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceSize, sizeof(workspaceSize));
 
+    // Print cuBLASLt version for debugging
+    size_t cublasLtVer = cublasLtGetVersion();
+    std::cerr << "  cublasLt version: " << cublasLtVer << std::endl;
+    std::cerr << "  fp8Type enum value: " << (int)fp8Type << std::endl;
+
+    // Try heuristic with up to 10 algorithms
     int returnedResults = 0;
-    cublasLtMatmulHeuristicResult_t heuristicResult;
+    cublasLtMatmulHeuristicResult_t heuristicResults[10];
     cublasStatus_t heurStatus = cublasLtMatmulAlgoGetHeuristic(
         ltHandle, operationDesc,
-        Adesc, Bdesc, Cdesc, Ddesc,  // Note: Ddesc for output, not Cdesc
-        preference, 1, &heuristicResult, &returnedResults);
+        Adesc, Bdesc, Cdesc, Ddesc,
+        preference, 10, heuristicResults, &returnedResults);
+
+    std::cerr << "  Heuristic: status=" << heurStatus << ", results=" << returnedResults << std::endl;
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -220,9 +244,9 @@ static float run_gemm_fp8(cudaDataType_t fp8Type, int M, int N, int K) {
                                                 d_A, Adesc,
                                                 d_B, Bdesc,
                                                 &beta,
-                                                d_C, Cdesc,   // C (bias, BF16)
-                                                d_D, Ddesc,   // D (output, FP8)
-                                                &heuristicResult.algo,
+                                                d_C, Cdesc,
+                                                d_D, Ddesc,
+                                                &heuristicResults[0].algo,
                                                 d_workspace, workspaceSize, 0);
         cudaEventRecord(stop);
         cudaEventSynchronize(stop);

@@ -85,13 +85,13 @@ int main() {
     CHECK_CUBLAS(cublasLtMatmulDescCreate(&opDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F));
 
     // Set block scaling modes for NVFP4
-    // CUBLASLT_MATMUL_MATRIX_SCALE_1D_BLOCK_16 for FP4 (16-element blocks)
-    cublasLtMatmulMatrixScale_t scaleMode1D_16 = CUBLASLT_MATMUL_MATRIX_SCALE_1D_BLOCK_16;
+    // VEC16_UE4M3 = 16-element 1D block scaling with UE4M3 (unsigned FP8) scale type
+    cublasLtMatmulMatrixScale_t scaleMode1D_16 = CUBLASLT_MATMUL_MATRIX_SCALE_VEC16_UE4M3;
     CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_A_SCALE_MODE, &scaleMode1D_16, sizeof(scaleMode1D_16)));
     CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_B_SCALE_MODE, &scaleMode1D_16, sizeof(scaleMode1D_16)));
 
-    // D has both a global float scale and per-block output scales
-    cublasLtMatmulMatrixScale_t scaleModeTensor = CUBLASLT_MATMUL_MATRIX_SCALE_SCALAR;
+    // D has both a global scalar float scale and per-block output scales
+    cublasLtMatmulMatrixScale_t scaleModeTensor = CUBLASLT_MATMUL_MATRIX_SCALE_SCALAR_32F;
     CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_D_SCALE_MODE, &scaleModeTensor, sizeof(scaleModeTensor)));
     CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE, &scaleMode1D_16, sizeof(scaleMode1D_16)));
 

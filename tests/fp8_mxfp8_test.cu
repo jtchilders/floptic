@@ -85,8 +85,8 @@ int main() {
     CHECK_CUBLAS(cublasLtMatmulDescCreate(&opDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F));
 
     // Set block scaling modes
-    // CUBLASLT_MATMUL_MATRIX_SCALE_1D_BLOCK_32 for FP8 (32-element blocks)
-    cublasLtMatmulMatrixScale_t scaleMode1D = CUBLASLT_MATMUL_MATRIX_SCALE_1D_BLOCK_32;
+    // VEC32_UE8M0 = 32-element 1D block scaling with UE8M0 (unsigned exponent-only) scale type
+    cublasLtMatmulMatrixScale_t scaleMode1D = CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0;
     CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_A_SCALE_MODE, &scaleMode1D, sizeof(scaleMode1D)));
     CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_B_SCALE_MODE, &scaleMode1D, sizeof(scaleMode1D)));
     CHECK_CUBLAS(cublasLtMatmulDescSetAttribute(opDesc, CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE, &scaleMode1D, sizeof(scaleMode1D)));

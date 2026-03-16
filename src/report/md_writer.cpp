@@ -58,6 +58,7 @@ void write_markdown_report(const Report& report, const std::string& output_path)
     std::string timestamp = report.timestamp.empty() ? md_get_timestamp() : report.timestamp;
 
     out << "# Floptic Benchmark Results\n\n";
+    out << "*" << timestamp << "*\n\n";
 
     // System info
     out << "## System Information\n\n";

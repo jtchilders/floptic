@@ -491,13 +491,12 @@ public:
         result.gflops = (flops_per_trial / 1e9) / (stats.median_ms / 1e3);
         result.effective_gflops = result.gflops;
 
-        // INT8 TC peak: 2× FP16 TC
-        auto it = device.theoretical_peak_gflops.find("FP16_TC");
+        // INT8 TC peak from device tables
+        auto it = device.theoretical_peak_gflops.find("INT8_TC");
         if (it != device.theoretical_peak_gflops.end() && it->second > 0) {
-            double int8_peak = it->second * 2.0;
-            result.peak_percent = (result.gflops / int8_peak) * 100.0;
+            result.peak_percent = (result.gflops / it->second) * 100.0;
         }
-        std::cerr << "  (peak% vs INT8_TC estimate = 2×FP16_TC)" << std::endl;
+        std::cerr << "  (peak% vs INT8_TC)" << std::endl;
 
         result.clock_mhz = device.boost_clock_mhz;
         return result;
@@ -586,13 +585,12 @@ public:
         result.gflops = (flops_per_trial / 1e9) / (stats.median_ms / 1e3);
         result.effective_gflops = result.gflops;
 
-        // FP8 TC peak: 2× FP16 TC on Hopper
-        auto it = device.theoretical_peak_gflops.find("FP16_TC");
+        // FP8 TC peak from device tables
+        auto it = device.theoretical_peak_gflops.find("FP8_TC");
         if (it != device.theoretical_peak_gflops.end() && it->second > 0) {
-            double fp8_peak = it->second * 2.0;
-            result.peak_percent = (result.gflops / fp8_peak) * 100.0;
+            result.peak_percent = (result.gflops / it->second) * 100.0;
         }
-        std::cerr << "  (peak% vs FP8_TC estimate = 2×FP16_TC)" << std::endl;
+        std::cerr << "  (peak% vs FP8_TC)" << std::endl;
 
         result.clock_mhz = device.boost_clock_mhz;
         return result;

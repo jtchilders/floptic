@@ -22,7 +22,7 @@ static double fp64_fma_per_sm_per_clock(int major, int minor) {
             if (minor == 9) return 1;   // RTX 4090: 1/64 of FP32
             return 32;                   // default Ampere datacenter
         case 9:  return 64;             // H100: 64 FP64 FMA/SM/clk (4th gen tensor arch)
-        case 10: return 64;             // B200 estimated
+        case 10: return 64;             // B200: 64 FP64 FMA/SM/clk (HGX 1000W: 37 TF/s)
         default: return 4;              // conservative
     }
 }
@@ -87,6 +87,32 @@ static double int8_ops_per_sm_per_clock(int major, int minor) {
     }
 }
 
+// INT8 tensor core ops per SM per clock
+// INT8 TC rate = 2× FP16 TC rate (each TC can do 2× as many INT8 ops)
+static double tc_int8_ops_per_sm_per_clock(int major, int minor) {
+    switch (major) {
+        case 7:
+            if (minor == 0) return 1024;  // V100: 2× FP16 TC
+            return 1024;                   // Turing
+        case 8:
+            if (minor == 0) return 2048;  // A100: 2048 INT8 ops/SM/clk
+            return 2048;                   // Ada
+        case 9:  return 4096;             // H100: 4096 INT8 ops/SM/clk
+        case 10: return 7737;             // B200: HGX 4500 TOPS dense @ 148 SM × 1965 MHz
+        default: return 1024;
+    }
+}
+
+// FP8 tensor core FMA per SM per clock (Hopper+)
+// FP8 TC rate = 2× FP16 TC rate on Hopper; same as INT8 TC on Blackwell
+static double tc_fp8_fma_per_sm_per_clock(int major, int minor) {
+    switch (major) {
+        case 9:  return 4096;             // H100: 2× FP16 TC
+        case 10: return 7737;             // B200: HGX 4500 TF/s dense @ 148 SM × 1965 MHz
+        default: return 0;                // No FP8 TC before Hopper
+    }
+}
+
 // ============================================================================
 // Tensor core theoretical peaks (GEMM-specific, per SM per clock)
 // These are for reference in the device info; used by matrix kernels
@@ -101,7 +127,7 @@ static double tc_fp16_fma_per_sm_per_clock(int major, int minor) {
             if (minor == 0) return 1024;  // A100
             return 1024;                   // Ada (with sparsity: 2048)
         case 9:  return 2048;             // H100
-        case 10: return 2048;             // B200 est.
+        case 10: return 3868;             // B200: HGX 2250 TF/s dense @ 148 SM × 1965 MHz
         default: return 512;
     }
 }
@@ -115,7 +141,7 @@ static double tc_tf32_fma_per_sm_per_clock(int major, int minor) {
             if (minor == 0) return 512;  // A100: 512 TF32 FMA/SM/clk (half of FP16 TC)
             return 512;                   // Ada
         case 9:  return 1024;            // H100: 1024 TF32 FMA/SM/clk
-        case 10: return 1024;            // Blackwell est.
+        case 10: return 1934;            // B200: HGX 1125 TF/s dense @ 148 SM × 1965 MHz
         default: return 0;
     }
 }
@@ -126,6 +152,7 @@ static double tc_fp64_fma_per_sm_per_clock(int major, int minor) {
             if (minor == 0) return 64;   // A100: 64 FP64 TC FMA/SM/clk
             return 0;
         case 9:  return 128;             // H100: 128 FP64 TC FMA/SM/clk (~67 TFLOP/s)
+        case 10: return 0;              // B200: NO FP64 tensor cores (FP64 TC = CUDA core rate)
         default: return 0;               // No FP64 tensor on others
     }
 }
@@ -199,9 +226,10 @@ std::vector<DeviceInfo> discover_cuda_devices() {
         if (props.major >= 7) {
             dev.features.push_back(Feature::TENSOR_CORES);
         }
-        if ((props.major == 8 && props.minor == 0) || props.major >= 9) {
+        if ((props.major == 8 && props.minor == 0) || props.major == 9) {
             dev.features.push_back(Feature::FP64_TENSOR);
         }
+        // Note: Blackwell (sm_100) does NOT have FP64 tensor cores
         if (props.major >= 8) {
             dev.features.push_back(Feature::STRUCTURED_SPARSITY);
         }
@@ -234,6 +262,14 @@ std::vector<DeviceInfo> discover_cuda_devices() {
         double tc_fp64 = tc_fp64_fma_per_sm_per_clock(props.major, props.minor);
         if (tc_fp64 > 0)
             dev.theoretical_peak_gflops["FP64_TC"] = sms * clock_ghz * tc_fp64 * 2.0;
+
+        double tc_int8 = tc_int8_ops_per_sm_per_clock(props.major, props.minor);
+        if (tc_int8 > 0)
+            dev.theoretical_peak_gflops["INT8_TC"] = sms * clock_ghz * tc_int8 * 2.0;
+
+        double tc_fp8 = tc_fp8_fma_per_sm_per_clock(props.major, props.minor);
+        if (tc_fp8 > 0)
+            dev.theoretical_peak_gflops["FP8_TC"] = sms * clock_ghz * tc_fp8 * 2.0;
 
         // Print summary
         std::cerr << "  CUDA " << dev.id << " (" << dev.name << "):" << std::endl;

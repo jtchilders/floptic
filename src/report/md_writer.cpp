@@ -54,15 +54,46 @@ void write_markdown_report(const Report& report, const std::string& output_path)
         return;
     }
 
-    std::string hostname = report.hostname.empty() ? md_get_hostname() : report.hostname;
+    std::string hostname = report.system.hostname.empty() ? md_get_hostname() : report.system.hostname;
     std::string timestamp = report.timestamp.empty() ? md_get_timestamp() : report.timestamp;
 
     out << "# Floptic Benchmark Results\n\n";
-    out << "- **Date**: " << timestamp << "\n";
-    out << "- **Host**: " << hostname << "\n";
-    out << "- **Floptic version**: " << report.version << "\n";
-    out << "- **Trials**: " << report.iterations << "\n";
+
+    // System info
+    out << "## System Information\n\n";
+    out << "| Property | Value |\n";
+    out << "|----------|-------|\n";
+    out << "| Date | " << timestamp << " |\n";
+    out << "| Hostname | " << hostname << " |\n";
+    out << "| Floptic | v" << report.version << " |\n";
+    out << "| Trials | " << report.iterations << " |\n";
+
+    if (!report.system.os_name.empty())
+        out << "| OS | " << report.system.os_name << " " << report.system.os_release << " |\n";
+    if (!report.system.os_arch.empty())
+        out << "| Architecture | " << report.system.os_arch << " |\n";
+    if (!report.system.cpu_model.empty())
+        out << "| CPU | " << report.system.cpu_model << " |\n";
+    if (!report.system.compiler_name.empty())
+        out << "| Compiler | " << report.system.compiler_name << " " << report.system.compiler_version << " |\n";
+    if (!report.system.cuda_runtime_version.empty())
+        out << "| CUDA Runtime | " << report.system.cuda_runtime_version << " |\n";
+    if (!report.system.cuda_driver_version.empty())
+        out << "| CUDA Driver | " << report.system.cuda_driver_version << " |\n";
+    if (!report.system.nvidia_smi_driver.empty())
+        out << "| NVIDIA Driver | " << report.system.nvidia_smi_driver << " |\n";
+    if (!report.system.cublas_version.empty())
+        out << "| cuBLAS | " << report.system.cublas_version << " |\n";
     out << "\n";
+
+    // Loaded modules
+    if (!report.system.loaded_modules.empty()) {
+        out << "### Loaded Modules\n\n";
+        out << "```\n";
+        for (auto& m : report.system.loaded_modules)
+            out << m << "\n";
+        out << "```\n\n";
+    }
 
     // Group benchmarks by device
     std::map<std::string, std::vector<const BenchmarkEntry*>> by_device;

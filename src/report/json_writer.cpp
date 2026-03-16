@@ -25,9 +25,19 @@ nlohmann::json report_to_json(const Report& report) {
 
     j["floptic_version"] = report.version;
     j["timestamp"] = report.timestamp.empty() ? get_timestamp() : report.timestamp;
-    j["system"]["hostname"] = report.hostname.empty() ? get_hostname() : report.hostname;
-    j["system"]["os"] = report.os;
-    j["system"]["compiler"] = report.compiler;
+
+    j["system"]["hostname"] = report.system.hostname.empty() ? get_hostname() : report.system.hostname;
+    j["system"]["os_name"] = report.system.os_name;
+    j["system"]["os_release"] = report.system.os_release;
+    j["system"]["os_arch"] = report.system.os_arch;
+    j["system"]["cpu_model"] = report.system.cpu_model;
+    j["system"]["compiler_name"] = report.system.compiler_name;
+    j["system"]["compiler_version"] = report.system.compiler_version;
+    j["system"]["cuda_runtime_version"] = report.system.cuda_runtime_version;
+    j["system"]["cuda_driver_version"] = report.system.cuda_driver_version;
+    j["system"]["nvidia_smi_driver"] = report.system.nvidia_smi_driver;
+    j["system"]["cublas_version"] = report.system.cublas_version;
+    j["system"]["loaded_modules"] = report.system.loaded_modules;
     j["system"]["build_backends"] = report.build_backends;
 
     j["config"]["iterations"] = report.iterations;

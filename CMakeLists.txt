@@ -34,6 +34,7 @@ add_library(floptic_core STATIC
     src/harness/power_monitor.cpp
     src/report/json_writer.cpp
     src/report/md_writer.cpp
+    src/report/system_info.cpp
     src/kernels/scalar/scalar_fma_cpu.cpp
     src/kernels/vector/vector_axpy_cpu.cpp
 )

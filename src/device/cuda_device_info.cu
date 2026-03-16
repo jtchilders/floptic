@@ -292,6 +292,44 @@ std::vector<DeviceInfo> discover_cuda_devices() {
     return devices;
 }
 
+// ============================================================================
+// Fill CUDA-specific system info
+// ============================================================================
+
+} // namespace floptic
+
+#include "floptic/report.hpp"
+#include <cublas_v2.h>
+
+namespace floptic {
+
+void fill_cuda_system_info(SystemInfo& info) {
+    // CUDA runtime version
+    int runtime_ver = 0;
+    cudaRuntimeGetVersion(&runtime_ver);
+    int rt_major = runtime_ver / 1000;
+    int rt_minor = (runtime_ver % 1000) / 10;
+    char vbuf[32];
+    snprintf(vbuf, sizeof(vbuf), "%d.%d", rt_major, rt_minor);
+    info.cuda_runtime_version = vbuf;
+
+    // CUDA driver version
+    int driver_ver = 0;
+    cudaDriverGetVersion(&driver_ver);
+    int drv_major = driver_ver / 1000;
+    int drv_minor = (driver_ver % 1000) / 10;
+    snprintf(vbuf, sizeof(vbuf), "%d.%d", drv_major, drv_minor);
+    info.cuda_driver_version = vbuf;
+
+    // cuBLAS version
+    int major = 0, minor = 0, patch = 0;
+    cublasGetProperty(MAJOR_VERSION, &major);
+    cublasGetProperty(MINOR_VERSION, &minor);
+    cublasGetProperty(PATCH_LEVEL, &patch);
+    snprintf(vbuf, sizeof(vbuf), "%d.%d.%d", major, minor, patch);
+    info.cublas_version = vbuf;
+}
+
 } // namespace floptic
 
 #endif // FLOPTIC_HAS_CUDA

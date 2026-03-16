@@ -144,6 +144,10 @@ int main(int argc, char* argv[]) {
 #ifdef FLOPTIC_HAS_CUDA
     report.build_backends.push_back("cuda");
 #endif
+    report.system = collect_system_info();
+#ifdef FLOPTIC_HAS_CUDA
+    fill_cuda_system_info(report.system);
+#endif
 
     std::cerr << "\nRunning benchmarks..." << std::endl;
 

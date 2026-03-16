@@ -421,21 +421,7 @@ public:
             dev_idx = std::stoi(device.id.substr(pos + 1));
         cudaSetDevice(dev_idx);
 
-        // Matrix size: use inner_iters to scale
-        // Default (100K inner_iters): M=N=K=4096
-        // We use a fixed set of sizes based on the iterations
-        int M, N, K;
-        if (config.iterations <= 1000) {
-            M = N = K = 1024;
-        } else if (config.iterations <= 10000) {
-            M = N = K = 2048;
-        } else if (config.iterations <= 100000) {
-            M = N = K = 4096;
-        } else {
-            M = N = K = 8192;
-        }
-
-        // Check memory: need 3 matrices × M×K × elem_size
+        // Element size for memory budget check
         size_t elem_size = 8; // default FP64
         switch (config.precision) {
             case Precision::FP16: elem_size = 2; break;
@@ -444,17 +430,6 @@ public:
             case Precision::TF32: elem_size = 4; break;
             default: elem_size = 8;
         }
-        size_t needed = 3ULL * M * K * elem_size;
-        if (needed > device.memory_bytes * 0.8) {
-            // Reduce matrix size
-            while (needed > device.memory_bytes * 0.8 && M > 512) {
-                M /= 2; N /= 2; K /= 2;
-                needed = 3ULL * M * K * elem_size;
-            }
-        }
-
-        // FLOPs per GEMM: 2 * M * N * K
-        int64_t flops_per_trial = 2LL * M * N * K;
 
         std::string tc_note = "";
         if (config.precision == Precision::FP16 || config.precision == Precision::BF16 ||
@@ -462,22 +437,75 @@ public:
             tc_note = " (tensor cores)";
         }
 
-        std::cerr << "  Running gemm_cublas [cuda/" << precision_to_string(config.precision)
-                  << "/" << config.mode << tc_note << "] M=N=K=" << M << std::endl;
-
         // Create cuBLAS handle
         cublasHandle_t handle;
         check_cublas(cublasCreate(&handle), "cublasCreate");
 
-        // Warmup
+        // Sweep matrix sizes to find peak throughput
+        int sweep_sizes[] = {1024, 2048, 4096, 8192, 16384};
+        int num_sweep = sizeof(sweep_sizes) / sizeof(sweep_sizes[0]);
+
+        double best_gflops = 0;
+        int best_size = 4096;
+        double best_median_ms = 0;
+
+        std::cerr << "  Sweeping gemm_cublas [cuda/" << precision_to_string(config.precision)
+                  << "/" << config.mode << tc_note << "]:" << std::endl;
+
+        for (int si = 0; si < num_sweep; si++) {
+            int M = sweep_sizes[si], N = M, K = M;
+
+            // Check memory: need 3 matrices × M×N × elem_size
+            size_t needed = 3ULL * M * N * elem_size;
+            if (needed > device.memory_bytes * 0.8) {
+                std::cerr << "    M=N=K=" << M << ": skipped (needs "
+                          << (needed / (1024*1024)) << " MB)" << std::endl;
+                continue;
+            }
+
+            int64_t flops_per_trial = 2LL * M * N * K;
+
+            // Warmup
+            for (int w = 0; w < 3; w++) {
+                dispatch_gemm(handle, config.precision, M, N, K);
+            }
+
+            // Quick measurement (3 trials for sweep)
+            std::vector<double> times;
+            int sweep_trials = std::min(3, measurement_trials);
+            for (int t = 0; t < sweep_trials; t++) {
+                float ms = dispatch_gemm(handle, config.precision, M, N, K);
+                times.push_back(static_cast<double>(ms));
+            }
+            std::sort(times.begin(), times.end());
+            double median_ms = times[times.size() / 2];
+            double gflops = (flops_per_trial / 1e9) / (median_ms / 1e3);
+
+            std::cerr << "    M=N=K=" << M << ": " << gflops << " GFLOP/s ("
+                      << median_ms << " ms)" << std::endl;
+
+            if (gflops > best_gflops) {
+                best_gflops = gflops;
+                best_size = M;
+                best_median_ms = median_ms;
+            }
+        }
+
+        // Full measurement at best size
+        int M = best_size, N = best_size, K = best_size;
+        int64_t flops_per_trial = 2LL * M * N * K;
+
+        std::cerr << "  Best size: M=N=K=" << best_size << " → full measurement ("
+                  << measurement_trials << " trials)" << std::endl;
+
+        // Warmup at best size
         for (int w = 0; w < 3; w++) {
             dispatch_gemm(handle, config.precision, M, N, K);
         }
 
-        // Measurement
+        // Full measurement
         std::vector<double> times;
         times.reserve(measurement_trials);
-
         for (int t = 0; t < measurement_trials; t++) {
             float ms = dispatch_gemm(handle, config.precision, M, N, K);
             times.push_back(static_cast<double>(ms));
@@ -503,7 +531,7 @@ public:
         }
 
         // Report which peak we compared against
-        std::cerr << "  (peak% vs " << pk << " theoretical)" << std::endl;
+        std::cerr << "  (peak% vs " << pk << " theoretical, M=N=K=" << best_size << ")" << std::endl;
 
         result.clock_mhz = device.boost_clock_mhz;
         return result;
@@ -540,51 +568,72 @@ public:
             dev_idx = std::stoi(device.id.substr(pos + 1));
         cudaSetDevice(dev_idx);
 
-        int M, N, K;
-        if (config.iterations <= 1000) {
-            M = N = K = 1024;
-        } else if (config.iterations <= 10000) {
-            M = N = K = 2048;
-        } else if (config.iterations <= 100000) {
-            M = N = K = 4096;
-        } else {
-            M = N = K = 8192;
-        }
-
         size_t elem_size = (config.precision == Precision::FP32) ? 4 : 8;
-        size_t needed = 3ULL * M * K * elem_size;
-        while (needed > device.memory_bytes * 0.8 && M > 512) {
-            M /= 2; N /= 2; K /= 2;
-            needed = 3ULL * M * K * elem_size;
-        }
-
-        int64_t flops_per_trial = 2LL * M * N * K;
-
-        std::cerr << "  Running gemm_cublas_notc [cuda/" << precision_to_string(config.precision)
-                  << "/" << config.mode << " (CUDA cores only)] M=N=K=" << M << std::endl;
 
         cublasHandle_t handle;
         check_cublas(cublasCreate(&handle), "cublasCreate");
 
-        auto dispatch_notc = [&]() -> float {
+        auto dispatch_notc = [&](int m, int n, int k) -> float {
             if (config.precision == Precision::FP64) {
-                return run_gemm_fp64_notc(handle, M, N, K);
+                return run_gemm_fp64_notc(handle, m, n, k);
             } else {
-                return run_gemm_fp32_notc(handle, M, N, K);
+                return run_gemm_fp32_notc(handle, m, n, k);
             }
         };
 
-        // Warmup
-        for (int w = 0; w < 3; w++) {
-            dispatch_notc();
+        // Sweep matrix sizes to find peak throughput
+        int sweep_sizes[] = {1024, 2048, 4096, 8192, 16384};
+        int num_sweep = sizeof(sweep_sizes) / sizeof(sweep_sizes[0]);
+
+        double best_gflops = 0;
+        int best_size = 4096;
+
+        std::cerr << "  Sweeping gemm_cublas_notc [cuda/" << precision_to_string(config.precision)
+                  << "/" << config.mode << " (CUDA cores only)]:" << std::endl;
+
+        for (int si = 0; si < num_sweep; si++) {
+            int M = sweep_sizes[si], N = M, K = M;
+            size_t needed = 3ULL * M * N * elem_size;
+            if (needed > device.memory_bytes * 0.8) {
+                std::cerr << "    M=N=K=" << M << ": skipped (needs "
+                          << (needed / (1024*1024)) << " MB)" << std::endl;
+                continue;
+            }
+
+            int64_t flops = 2LL * M * N * K;
+
+            for (int w = 0; w < 3; w++) dispatch_notc(M, N, K);
+
+            std::vector<double> times;
+            int sweep_trials = std::min(3, measurement_trials);
+            for (int t = 0; t < sweep_trials; t++)
+                times.push_back(static_cast<double>(dispatch_notc(M, N, K)));
+            std::sort(times.begin(), times.end());
+            double median_ms = times[times.size() / 2];
+            double gflops = (flops / 1e9) / (median_ms / 1e3);
+
+            std::cerr << "    M=N=K=" << M << ": " << gflops << " GFLOP/s ("
+                      << median_ms << " ms)" << std::endl;
+
+            if (gflops > best_gflops) {
+                best_gflops = gflops;
+                best_size = M;
+            }
         }
 
-        // Measurement
+        // Full measurement at best size
+        int M = best_size, N = best_size, K = best_size;
+        int64_t flops_per_trial = 2LL * M * N * K;
+
+        std::cerr << "  Best size: M=N=K=" << best_size << " → full measurement ("
+                  << measurement_trials << " trials)" << std::endl;
+
+        for (int w = 0; w < 3; w++) dispatch_notc(M, N, K);
+
         std::vector<double> times;
         times.reserve(measurement_trials);
-        for (int t = 0; t < measurement_trials; t++) {
-            times.push_back(static_cast<double>(dispatch_notc()));
-        }
+        for (int t = 0; t < measurement_trials; t++)
+            times.push_back(static_cast<double>(dispatch_notc(M, N, K)));
 
         cublasDestroy(handle);
 
@@ -605,7 +654,7 @@ public:
             result.peak_percent = (result.gflops / it->second) * 100.0;
         }
 
-        std::cerr << "  (peak% vs " << pk << " CUDA core theoretical)" << std::endl;
+        std::cerr << "  (peak% vs " << pk << " CUDA core theoretical, M=N=K=" << best_size << ")" << std::endl;
 
         result.clock_mhz = device.boost_clock_mhz;
         return result;

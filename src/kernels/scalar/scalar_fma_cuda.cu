@@ -196,40 +196,103 @@ public:
             dev_idx = std::stoi(device.id.substr(pos + 1));
         cudaSetDevice(dev_idx);
 
-        // Launch configuration
         int sms = device.compute_units;
-        int threads_per_block = config.gpu_threads_per_block;
-        int blocks;
-        if (config.gpu_blocks > 0) {
-            blocks = config.gpu_blocks;
-        } else {
-            blocks = sms * config.gpu_blocks_per_sm;
-        }
-        int total_threads = blocks * threads_per_block;
-
         int64_t iters = config.iterations;
         int chains = (config.mode == "latency") ? 1 : 8;
+
+        // If user explicitly set blocks, use that config (no sweep)
+        bool user_specified = (config.gpu_blocks > 0);
+
+        if (user_specified) {
+            int blocks = config.gpu_blocks;
+            int tpb = config.gpu_threads_per_block;
+            int total_threads = blocks * tpb;
+            int64_t flops_per_trial = static_cast<int64_t>(total_threads) * chains * iters * 2;
+
+            std::cerr << "  Running scalar_fma [cuda/" << precision_to_string(config.precision)
+                      << "/" << config.mode << "] blocks=" << blocks
+                      << " threads=" << tpb << " iters=" << iters << std::endl;
+
+            for (int w = 0; w < 3; w++)
+                dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
+
+            std::vector<double> times;
+            times.reserve(measurement_trials);
+            for (int t = 0; t < measurement_trials; t++)
+                times.push_back(static_cast<double>(
+                    dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters)));
+
+            auto stats = TimingStats::compute(times);
+            KernelResult result;
+            result.median_time_ms = stats.median_ms;
+            result.min_time_ms = stats.min_ms;
+            result.max_time_ms = stats.max_ms;
+            result.total_flops = flops_per_trial;
+            result.gflops = (flops_per_trial / 1e9) / (stats.median_ms / 1e3);
+            result.effective_gflops = result.gflops;
+
+            std::string prec_key = precision_to_string(config.precision);
+            auto it = device.theoretical_peak_gflops.find(prec_key);
+            if (it != device.theoretical_peak_gflops.end() && it->second > 0)
+                result.peak_percent = (result.gflops / it->second) * 100.0;
+
+            result.clock_mhz = device.boost_clock_mhz;
+            return result;
+        }
+
+        // Auto-sweep: try multiple (blocks_per_sm, threads_per_block) configs
+        int bpsm_values[] = {2, 4, 6, 8, 12, 16};
+        int tpb_values[]  = {128, 256, 512, 1024};
+        int n_bpsm = sizeof(bpsm_values) / sizeof(bpsm_values[0]);
+        int n_tpb  = sizeof(tpb_values)  / sizeof(tpb_values[0]);
+
+        double best_gflops = 0;
+        int best_bpsm = 4, best_tpb = 256;
+
+        std::cerr << "  Sweeping scalar_fma [cuda/" << precision_to_string(config.precision)
+                  << "/" << config.mode << "] iters=" << iters << ":" << std::endl;
+
+        for (int bi = 0; bi < n_bpsm; bi++) {
+            for (int ti = 0; ti < n_tpb; ti++) {
+                int bpsm = bpsm_values[bi];
+                int tpb  = tpb_values[ti];
+                int blocks = sms * bpsm;
+                int total_threads = blocks * tpb;
+                int64_t flops_per_trial = static_cast<int64_t>(total_threads) * chains * iters * 2;
+
+                // Quick warmup + 2 trial measurement
+                dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
+                float ms1 = dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
+                float ms2 = dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
+                double median_ms = std::min(ms1, ms2);
+                double gflops = (flops_per_trial / 1e9) / (median_ms / 1e3);
+
+                if (gflops > best_gflops) {
+                    best_gflops = gflops;
+                    best_bpsm = bpsm;
+                    best_tpb = tpb;
+                }
+            }
+        }
+
+        int blocks = sms * best_bpsm;
+        int tpb = best_tpb;
+        int total_threads = blocks * tpb;
         int64_t flops_per_trial = static_cast<int64_t>(total_threads) * chains * iters * 2;
 
-        std::cerr << "  Running scalar_fma [cuda/" << precision_to_string(config.precision)
-                  << "/" << config.mode << "] blocks=" << blocks
-                  << " threads=" << threads_per_block
-                  << " iters=" << iters << std::endl;
+        std::cerr << "  Best config: bpsm=" << best_bpsm << " tpb=" << best_tpb
+                  << " (" << best_gflops << " GFLOP/s) → full measurement ("
+                  << measurement_trials << " trials)" << std::endl;
 
-        // Warmup
-        for (int w = 0; w < 3; w++) {
-            dispatch_benchmark(config.precision, config.mode, blocks, threads_per_block, iters);
-        }
+        // Full measurement at best config
+        for (int w = 0; w < 3; w++)
+            dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
 
-        // Measurement
         std::vector<double> times;
         times.reserve(measurement_trials);
-
-        for (int t = 0; t < measurement_trials; t++) {
-            float ms = dispatch_benchmark(config.precision, config.mode,
-                                          blocks, threads_per_block, iters);
-            times.push_back(static_cast<double>(ms));
-        }
+        for (int t = 0; t < measurement_trials; t++)
+            times.push_back(static_cast<double>(
+                dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters)));
 
         auto stats = TimingStats::compute(times);
 

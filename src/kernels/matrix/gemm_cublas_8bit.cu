@@ -444,29 +444,72 @@ public:
             dev_idx = std::stoi(device.id.substr(pos + 1));
         cudaSetDevice(dev_idx);
 
-        int M, N, K;
-        if (config.iterations <= 1000)       { M = N = K = 1024; }
-        else if (config.iterations <= 10000) { M = N = K = 2048; }
-        else if (config.iterations <= 100000){ M = N = K = 4096; }
-        else                                 { M = N = K = 8192; }
+        // Sweep matrix sizes to find peak throughput
+        int sweep_sizes[] = {1024, 2048, 4096, 8192, 16384};
+        int num_sweep = sizeof(sweep_sizes) / sizeof(sweep_sizes[0]);
 
-        int64_t flops_per_trial = 2LL * M * N * K;
+        double best_gflops = 0;
+        int best_size = 4096;
 
-        std::cerr << "  Running gemm_cublas_int8 [cuda/INT8/throughput (tensor cores)] M=N=K="
-                  << M << std::endl;
+        std::cerr << "  Sweeping gemm_cublas_int8 [cuda/INT8/throughput (tensor cores)]:" << std::endl;
 
-        // Auto-tune: find best algorithm
-        autotune_int8(M, N, K);
-        if (!g_hasBestAlgo_int8) {
-            std::cerr << "  INT8 GEMM auto-tune failed" << std::endl;
+        for (int si = 0; si < num_sweep; si++) {
+            int M = sweep_sizes[si], N = M, K = M;
+
+            // INT8 is 1 byte per element, 3 matrices + output (int32 = 4 bytes)
+            size_t needed = (size_t)M * N * 1 * 2 + (size_t)M * N * 4;
+            if (needed > device.memory_bytes * 0.8) {
+                std::cerr << "    M=N=K=" << M << ": skipped (needs "
+                          << (needed / (1024*1024)) << " MB)" << std::endl;
+                continue;
+            }
+
+            // Auto-tune at this size
+            autotune_int8(M, N, K);
+            if (!g_hasBestAlgo_int8) {
+                std::cerr << "    M=N=K=" << M << ": auto-tune failed" << std::endl;
+                continue;
+            }
+
+            int64_t flops = 2LL * M * N * K;
+
+            for (int w = 0; w < 3; w++) run_gemm_int8(M, N, K);
+
+            std::vector<double> times;
+            int sweep_trials = std::min(3, measurement_trials);
+            for (int t = 0; t < sweep_trials; t++) {
+                float ms = run_gemm_int8(M, N, K);
+                if (ms > 0) times.push_back(static_cast<double>(ms));
+            }
+            if (times.empty()) continue;
+            std::sort(times.begin(), times.end());
+            double median_ms = times[times.size() / 2];
+            double gflops = (flops / 1e9) / (median_ms / 1e3);
+
+            std::cerr << "    M=N=K=" << M << ": " << gflops << " GFLOP/s ("
+                      << median_ms << " ms)" << std::endl;
+
+            if (gflops > best_gflops) {
+                best_gflops = gflops;
+                best_size = M;
+            }
+        }
+
+        if (best_gflops <= 0) {
+            std::cerr << "  INT8 GEMM — no valid configuration found" << std::endl;
             KernelResult result;
             return result;
         }
 
-        // Warmup with best algo
-        for (int w = 0; w < 3; w++) {
-            run_gemm_int8(M, N, K);
-        }
+        // Full measurement at best size
+        int M = best_size, N = best_size, K = best_size;
+        int64_t flops_per_trial = 2LL * M * N * K;
+
+        std::cerr << "  Best size: M=N=K=" << best_size << " → full measurement ("
+                  << measurement_trials << " trials)" << std::endl;
+
+        autotune_int8(M, N, K);
+        for (int w = 0; w < 3; w++) run_gemm_int8(M, N, K);
 
         std::vector<double> times;
         times.reserve(measurement_trials);
@@ -496,7 +539,7 @@ public:
         if (it != device.theoretical_peak_gflops.end() && it->second > 0) {
             result.peak_percent = (result.gflops / it->second) * 100.0;
         }
-        std::cerr << "  (peak% vs INT8_TC)" << std::endl;
+        std::cerr << "  (peak% vs INT8_TC, M=N=K=" << best_size << ")" << std::endl;
 
         result.clock_mhz = device.boost_clock_mhz;
         return result;
@@ -534,34 +577,77 @@ public:
             dev_idx = std::stoi(device.id.substr(pos + 1));
         cudaSetDevice(dev_idx);
 
-        int M, N, K;
-        if (config.iterations <= 1000)       { M = N = K = 1024; }
-        else if (config.iterations <= 10000) { M = N = K = 2048; }
-        else if (config.iterations <= 100000){ M = N = K = 4096; }
-        else                                 { M = N = K = 8192; }
-
-        int64_t flops_per_trial = 2LL * M * N * K;
-
         cudaDataType_t fp8Type = (config.precision == Precision::FP8_E4M3)
                                   ? CUDA_R_8F_E4M3 : CUDA_R_8F_E5M2;
         std::string fp8Name = (config.precision == Precision::FP8_E4M3)
                                ? "FP8_E4M3" : "FP8_E5M2";
 
-        std::cerr << "  Running gemm_cublas_fp8 [cuda/" << fp8Name
-                  << "/throughput (tensor cores)] M=N=K=" << M << std::endl;
+        // Sweep matrix sizes to find peak throughput
+        int sweep_sizes[] = {1024, 2048, 4096, 8192, 16384};
+        int num_sweep = sizeof(sweep_sizes) / sizeof(sweep_sizes[0]);
 
-        // Auto-tune: find best algorithm (bypasses heuristic)
-        autotune_fp8(fp8Type, M, N, K);
-        if (!g_hasBestAlgo_fp8) {
+        double best_gflops = 0;
+        int best_size = 4096;
+
+        std::cerr << "  Sweeping gemm_cublas_fp8 [cuda/" << fp8Name
+                  << "/throughput (tensor cores)]:" << std::endl;
+
+        for (int si = 0; si < num_sweep; si++) {
+            int M = sweep_sizes[si], N = M, K = M;
+
+            // FP8: 1 byte per element for A,B,D; 2 bytes for C (BF16)
+            size_t needed = (size_t)M * N * 1 * 3 + (size_t)M * N * 2;
+            if (needed > device.memory_bytes * 0.8) {
+                std::cerr << "    M=N=K=" << M << ": skipped (needs "
+                          << (needed / (1024*1024)) << " MB)" << std::endl;
+                continue;
+            }
+
+            autotune_fp8(fp8Type, M, N, K);
+            if (!g_hasBestAlgo_fp8) {
+                std::cerr << "    M=N=K=" << M << ": no working algorithm" << std::endl;
+                continue;
+            }
+
+            int64_t flops = 2LL * M * N * K;
+
+            for (int w = 0; w < 3; w++) run_gemm_fp8(fp8Type, M, N, K);
+
+            std::vector<double> times;
+            int sweep_trials = std::min(3, measurement_trials);
+            for (int t = 0; t < sweep_trials; t++) {
+                float ms = run_gemm_fp8(fp8Type, M, N, K);
+                if (ms > 0) times.push_back(static_cast<double>(ms));
+            }
+            if (times.empty()) continue;
+            std::sort(times.begin(), times.end());
+            double median_ms = times[times.size() / 2];
+            double gflops = (flops / 1e9) / (median_ms / 1e3);
+
+            std::cerr << "    M=N=K=" << M << ": " << gflops << " GFLOP/s ("
+                      << median_ms << " ms)" << std::endl;
+
+            if (gflops > best_gflops) {
+                best_gflops = gflops;
+                best_size = M;
+            }
+        }
+
+        if (best_gflops <= 0) {
             std::cerr << "  " << fp8Name << " GEMM not supported on this device — skipping" << std::endl;
             KernelResult result;
             return result;
         }
 
-        // Warmup with best algo
-        for (int w = 0; w < 3; w++) {
-            run_gemm_fp8(fp8Type, M, N, K);
-        }
+        // Full measurement at best size
+        int M = best_size, N = best_size, K = best_size;
+        int64_t flops_per_trial = 2LL * M * N * K;
+
+        std::cerr << "  Best size: M=N=K=" << best_size << " → full measurement ("
+                  << measurement_trials << " trials)" << std::endl;
+
+        autotune_fp8(fp8Type, M, N, K);
+        for (int w = 0; w < 3; w++) run_gemm_fp8(fp8Type, M, N, K);
 
         std::vector<double> times;
         times.reserve(measurement_trials);
@@ -590,7 +676,7 @@ public:
         if (it != device.theoretical_peak_gflops.end() && it->second > 0) {
             result.peak_percent = (result.gflops / it->second) * 100.0;
         }
-        std::cerr << "  (peak% vs FP8_TC)" << std::endl;
+        std::cerr << "  (peak% vs FP8_TC, M=N=K=" << best_size << ")" << std::endl;
 
         result.clock_mhz = device.boost_clock_mhz;
         return result;

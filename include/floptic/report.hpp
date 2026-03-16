@@ -36,4 +36,7 @@ nlohmann::json report_to_json(const Report& report);
 // Write report to file or stdout
 void write_json_report(const Report& report, const std::string& output_path);
 
+// Write markdown report to file
+void write_markdown_report(const Report& report, const std::string& output_path);
+
 } // namespace floptic

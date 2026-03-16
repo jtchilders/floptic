@@ -15,6 +15,7 @@ struct CliOptions {
     int warmup = 10;                        // warmup iterations
     std::string report_format = "json";     // "json", "csv", "stdout"
     std::string output_path;                // empty = stdout
+    std::string output_md_path;             // markdown report path (empty = no md output)
 
     // Thread control
     int cpu_threads = 0;                    // 0 = all cores

@@ -33,6 +33,7 @@ add_library(floptic_core STATIC
     src/harness/validator.cpp
     src/harness/power_monitor.cpp
     src/report/json_writer.cpp
+    src/report/md_writer.cpp
     src/kernels/scalar/scalar_fma_cpu.cpp
     src/kernels/vector/vector_axpy_cpu.cpp
 )

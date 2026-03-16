@@ -27,6 +27,7 @@ void print_usage(const char* progname) {
               << "  --warmup=<N>         Warmup iterations (default: 10)\n"
               << "  --report=<FMT>       Output format: json, stdout (default: json)\n"
               << "  --output=<PATH>      Output file (default: stdout)\n"
+              << "  --output-md=<PATH>   Write markdown results report to file\n"
               << "\nThread control:\n"
               << "  --cpu-threads=<N>    CPU threads (default: all cores)\n"
               << "  --gpu-blocks=<N>     GPU thread blocks (default: auto = blocks-per-sm × SMs)\n"
@@ -81,6 +82,8 @@ CliOptions parse_args(int argc, char* argv[]) {
             opts.report_format = arg.substr(9);
         } else if (arg.rfind("--output=", 0) == 0) {
             opts.output_path = arg.substr(9);
+        } else if (arg.rfind("--output-md=", 0) == 0) {
+            opts.output_md_path = arg.substr(12);
         } else if (arg.rfind("--cpu-threads=", 0) == 0) {
             opts.cpu_threads = std::stoi(arg.substr(14));
         } else if (arg.rfind("--gpu-blocks=", 0) == 0) {

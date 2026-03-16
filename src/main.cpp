@@ -290,5 +290,8 @@ int main(int argc, char* argv[]) {
     // Write JSON report to file if --output was specified
     write_json_report(report, opts.output_path);
 
+    // Write markdown report if --output-md was specified
+    write_markdown_report(report, opts.output_md_path);
+
     return 0;
 }

@@ -64,6 +64,7 @@ if(FLOPTIC_HAS_CUDA)
         src/kernels/matrix/gemm_cublas.cu
         src/kernels/matrix/gemm_cublas_8bit.cu
         src/kernels/matrix/gemm_cublas_blkscale.cu
+        src/kernels/matrix/gemm_cublas_emulated.cu
     )
     target_include_directories(floptic_cuda PUBLIC include)
     target_link_libraries(floptic_cuda PUBLIC nlohmann_json::nlohmann_json)

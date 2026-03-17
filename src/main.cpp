@@ -25,6 +25,8 @@ namespace floptic {
         extern void gemm_cublas_fp8_link();
         extern void gemm_cublas_mxfp8_link();
         extern void gemm_cublas_nvfp4_link();
+        extern void gemm_cublas_emu_fp32_link();
+        extern void gemm_cublas_emu_fp64_link();
 #endif
     }
     static void force_link_all() {
@@ -41,6 +43,8 @@ namespace floptic {
         force_link::gemm_cublas_fp8_link();
         force_link::gemm_cublas_mxfp8_link();
         force_link::gemm_cublas_nvfp4_link();
+        force_link::gemm_cublas_emu_fp32_link();
+        force_link::gemm_cublas_emu_fp64_link();
 #endif
     }
 }

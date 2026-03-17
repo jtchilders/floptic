@@ -167,6 +167,7 @@ void write_markdown_report(const Report& report, const std::string& output_path)
         // Key ratios section (compute from GEMM results)
         double fp64_gemm = 0, fp32_gemm = 0, fp16_gemm = 0, bf16_gemm = 0;
         double tf32_gemm = 0, int8_gemm = 0, fp8_gemm = 0, fp4_gemm = 0;
+        double fp32_emu_gemm = 0, fp64_emu_gemm = 0;
 
         for (auto* e : by_device[dev.id]) {
             if (e->kernel_name != "gemm_cublas") continue;
@@ -186,6 +187,11 @@ void write_markdown_report(const Report& report, const std::string& output_path)
             // NVFP4 (block-scaled)
             if (e->kernel_name == "gemm_cublas_nvfp4" && e->precision == "FP4")
                 fp4_gemm = e->result.gflops;
+            // Emulated GEMMs
+            if (e->kernel_name == "gemm_cublas_emu_fp32" && e->precision == "FP32")
+                fp32_emu_gemm = e->result.gflops;
+            if (e->kernel_name == "gemm_cublas_emu_fp64" && e->precision == "FP64")
+                fp64_emu_gemm = e->result.gflops;
         }
 
         if (fp64_gemm > 0 && (fp16_gemm > 0 || tf32_gemm > 0)) {
@@ -197,10 +203,20 @@ void write_markdown_report(const Report& report, const std::string& output_path)
             snprintf(buf, sizeof(buf), "%.1f TF/s", fp64_gemm / 1e3);
             out << "| FP64 | " << buf << " | 1.0× |\n";
 
+            if (fp64_emu_gemm > 0) {
+                out << "| FP64 emu (Ozaki) | " << format_rate(fp64_emu_gemm, false) << " | ";
+                snprintf(buf, sizeof(buf), "%.1f×", fp64_emu_gemm / fp64_gemm);
+                out << buf << " |\n";
+            }
             if (fp32_gemm > 0) {
                 snprintf(buf, sizeof(buf), "%.1f TF/s", fp32_gemm / 1e3);
                 out << "| FP32 | " << buf << " | " ;
                 snprintf(buf, sizeof(buf), "%.1f×", fp32_gemm / fp64_gemm);
+                out << buf << " |\n";
+            }
+            if (fp32_emu_gemm > 0) {
+                out << "| FP32 emu (BF16x9) | " << format_rate(fp32_emu_gemm, false) << " | ";
+                snprintf(buf, sizeof(buf), "%.1f×", fp32_emu_gemm / fp64_gemm);
                 out << buf << " |\n";
             }
             if (tf32_gemm > 0) {

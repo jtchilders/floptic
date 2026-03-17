@@ -1,10 +1,12 @@
 # Floptic Benchmark Results
 
+*2026-03-17 13:35:40*
+
 ## System Information
 
 | Property | Value |
 |----------|-------|
-| Date | 2026-03-16 14:08:17 |
+| Date | 2026-03-17 13:35:40 |
 | Hostname | blackwell00 |
 | Floptic | v0.1.0 |
 | Trials | 10 |
@@ -25,6 +27,35 @@ gcc/13.3.0
 cuda/13.1
 ```
 
+## Intel(R) Xeon(R) 6960P (`cpu:0`)
+
+| Property | Value |
+|----------|-------|
+| Architecture | x86_64 |
+| Physical Cores | 144 |
+| Logical Cores | 288 |
+| Threads/Core | 2 |
+| Clock | 3745 MHz |
+| Memory | 0.0 GB |
+
+### Theoretical Peaks
+
+| Precision | Peak |
+|-----------|------|
+| FP32 | 34.5 TF/s |
+| FP64 | 17.3 TF/s |
+
+### Benchmark Results
+
+| Kernel | Precision | Mode | Rate | Peak% | Median (ms) |
+|--------|-----------|------|------|-------|-------------|
+| scalar_fma | FP64 | throughput | 1.3 TF/s | 7.5% | 2.842 |
+| scalar_fma | FP64 | latency | 175.0 GF/s | 1.0% | 2.633 |
+| scalar_fma | FP32 | throughput | 2.6 TF/s | 7.7% | 2.783 |
+| scalar_fma | FP32 | latency | 334.5 GF/s | 1.0% | 2.755 |
+| vector_axpy | FP64 | throughput | 7.8 GF/s | 0.0% | 2.575 |
+| vector_axpy | FP32 | throughput | 7.1 GF/s | 0.0% | 2.807 |
+
 ## NVIDIA B200 (`cuda:0`)
 
 | Property | Value |
@@ -42,6 +73,7 @@ cuda/13.1
 | FP16 | 148.9 TF/s |
 | FP16_TC | 2.25 PF/s |
 | FP32 | 74.4 TF/s |
+| FP4_TC | 9.00 PF/s |
 | FP64 | 37.2 TF/s |
 | FP8_TC | 4.50 PF/s |
 | INT8_TC | 4.50 PF/s |
@@ -51,42 +83,48 @@ cuda/13.1
 
 | Kernel | Precision | Mode | Rate | Peak% | Median (ms) |
 |--------|-----------|------|------|-------|-------------|
-| scalar_fma | FP64 | throughput | 35.8 TF/s | 96.1% | 108.400 |
-| scalar_fma | FP64 | latency | 32.6 TF/s | 87.5% | 14.897 |
-| scalar_fma | FP32 | throughput | 60.9 TF/s | 81.8% | 63.668 |
-| scalar_fma | FP32 | latency | 56.5 TF/s | 75.9% | 8.583 |
-| scalar_fma | FP16 | throughput | 74.3 TF/s | 49.9% | 13.059 |
-| scalar_fma | FP16 | latency | 37.0 TF/s | 24.9% | 13.090 |
-| scalar_fma | BF16 | throughput | 74.3 TF/s | 49.9% | 52.214 |
-| scalar_fma | BF16 | latency | 37.1 TF/s | 24.9% | 13.089 |
-| vector_axpy | FP64 | throughput | 362.0 GF/s | 1.0% | 0.055 |
-| vector_axpy | FP32 | throughput | 694.1 GF/s | 0.9% | 0.029 |
-| vector_axpy | FP16 | throughput | 696.0 GF/s | 0.5% | 0.029 |
-| vector_axpy | BF16 | throughput | 699.1 GF/s | 0.5% | 0.029 |
+| scalar_fma | FP64 | throughput | 35.8 TF/s | 96.2% | 108.367 |
+| scalar_fma | FP64 | latency | 32.6 TF/s | 87.5% | 14.891 |
+| scalar_fma | FP32 | throughput | 60.9 TF/s | 81.9% | 63.657 |
+| scalar_fma | FP32 | latency | 56.5 TF/s | 75.9% | 8.581 |
+| scalar_fma | FP16 | throughput | 74.3 TF/s | 49.9% | 13.055 |
+| scalar_fma | FP16 | latency | 37.1 TF/s | 24.9% | 13.086 |
+| scalar_fma | BF16 | throughput | 74.3 TF/s | 49.9% | 52.205 |
+| scalar_fma | BF16 | latency | 37.1 TF/s | 24.9% | 13.085 |
+| vector_axpy | FP64 | throughput | 361.6 GF/s | 1.0% | 0.055 |
+| vector_axpy | FP32 | throughput | 696.4 GF/s | 0.9% | 0.029 |
+| vector_axpy | FP16 | throughput | 698.7 GF/s | 0.5% | 0.029 |
+| vector_axpy | BF16 | throughput | 699.9 GF/s | 0.5% | 0.029 |
 | stream_triad | FP64 | throughput | 6.0 TB/s | 0.0% | 0.134 |
-| stream_triad | FP32 | throughput | 5.4 TB/s | 0.0% | 0.149 |
+| stream_triad | FP32 | throughput | 5.4 TB/s | 0.0% | 0.148 |
 | stream_copy | FP64 | throughput | 5.8 TB/s | 0.0% | 0.093 |
-| gemm_cublas | FP64 | throughput | 36.1 TF/s | 96.9% | 243.753 |
-| gemm_cublas | FP32 | throughput | 66.5 TF/s | 89.3% | 132.231 |
-| gemm_cublas | TF32 | throughput | 1.09 PF/s | 96.6% | 8.096 |
+| gemm_cublas | FP64 | throughput | 36.1 TF/s | 96.9% | 243.758 |
+| gemm_cublas | FP32 | throughput | 66.5 TF/s | 89.3% | 132.233 |
+| gemm_cublas | TF32 | throughput | 1.09 PF/s | 96.6% | 8.095 |
 | gemm_cublas | FP16 | throughput | 2.18 PF/s | 96.8% | 4.039 |
-| gemm_cublas | BF16 | throughput | 2.10 PF/s | 93.5% | 4.182 |
-| gemm_cublas_notc | FP64 | throughput | 36.4 TF/s | 97.7% | 241.735 |
-| gemm_cublas_notc | FP32 | throughput | 66.5 TF/s | 89.3% | 132.234 |
-| gemm_cublas_int8 | INT8 | throughput | 4.37 PF/s | 97.0% | 2.015 |
-| gemm_cublas_fp8 | FP8_E4M3 | throughput | 0.000 GF/s | 0.0% | 0.000 |
-| gemm_cublas_fp8 | FP8_E5M2 | throughput | 0.000 GF/s | 0.0% | 0.000 |
+| gemm_cublas | BF16 | throughput | 2.10 PF/s | 93.5% | 4.183 |
+| gemm_cublas_notc | FP64 | throughput | 36.4 TF/s | 97.8% | 241.714 |
+| gemm_cublas_notc | FP32 | throughput | 66.5 TF/s | 89.4% | 132.226 |
+| gemm_cublas_int8 | INT8 | throughput | 4.37 PF/s | 97.1% | 2.014 |
+| gemm_cublas_mxfp8 | FP8_E4M3 | throughput | 4.35 PF/s | 96.7% | 2.020 |
+| gemm_cublas_nvfp4 | FP4 | throughput | 7.40 PF/s | 82.3% | 0.148 |
+| gemm_cublas_emu_fp32 | FP32 | throughput | 243.2 TF/s | 326.7% | 36.161 |
+| gemm_cublas_emu_fp64 | FP64 | throughput | 83.8 TF/s | 225.0% | 105.020 |
 
 ### GEMM Precision Ratios (vs FP64)
 
 | Precision | Rate | Ratio vs FP64 |
 |-----------|------|---------------|
 | FP64 | 36.1 TF/s | 1.0× |
+| FP64 emu (Ozaki) | 83.8 TF/s | 2.3× |
 | FP32 | 66.5 TF/s | 1.8× |
+| FP32 emu (BF16x9) | 243.2 TF/s | 6.7× |
 | TF32 | 1.09 PF/s | 30.1× |
 | FP16 | 2.18 PF/s | 60.3× |
 | BF16 | 2.10 PF/s | 58.3× |
+| FP8 (E4M3) | 4.35 PF/s | 120.6× |
 | INT8 | 4.37 PF/s | 121.0× |
+| FP4 (E2M1) | 7.40 PF/s | 205.2× |
 
 ---
 *Generated by [Floptic](https://github.com/jtchilders/floptic) v0.1.0*

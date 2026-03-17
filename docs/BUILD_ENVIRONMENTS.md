@@ -58,7 +58,7 @@ make -C build_gpu_gh200 -j
 **OS**: Linux x86_64
 
 ```bash
-module load cuda/12.9.1 gcc/13.3.0 cmake
+module load cmake gcc/12.2.0 cuda/12.3.0
 
 cmake -B build_gpu_h100 -DCMAKE_CUDA_ARCHITECTURES=90 \
     -DCMAKE_CXX_COMPILER=g++ -DCMAKE_CUDA_HOST_COMPILER=g++
@@ -68,7 +68,7 @@ make -C build_gpu_h100 -j
 **Notes**:
 - FP8 per-tensor most likely to work here (x86_64 + sm_90)
 - Has FP64 tensor cores (unlike Blackwell)
-- CUDA 12.9.1 does NOT support emulated precision kernels (requires 13.1+)
+- CUDA 12.3 does NOT support emulated precision kernels (requires 13.1+)
 
 ### A100 — Ampere (sm_80)
 

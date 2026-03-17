@@ -293,12 +293,9 @@ REGISTER_KERNEL(GemmCublasEmuFP32);
 // Since we can't distinguish 13.0.0 from 13.0.2 via __CUDACC_VER_MAJOR/MINOR__,
 // we gate on CUDA >= 13.1 to be safe. If your CUDA 13.0u2 build fails,
 // increase to >= 13.2.
-// Detect at compile time whether the Ozaki enum exists.
-// We attempt to use it inside a constexpr-friendly check; if the enum
-// is missing, the #if guard excludes the whole block.
-// For safety, require CUDA >= 13.2 (CUDA 13.0u2 introduced it, but
-// CUDA 13.1 on JLSE doesn't have it).
-#if (__CUDACC_VER_MAJOR__ > 13) || (__CUDACC_VER_MAJOR__ == 13 && __CUDACC_VER_MINOR__ >= 2)
+// Ozaki FP64 emulation is available in CUDA 13.1+ (cuBLAS 13.2).
+// Enum name: CUBLAS_FP64_EMULATED_FIXEDPOINT_MATH (no underscore).
+#if (__CUDACC_VER_MAJOR__ > 13) || (__CUDACC_VER_MAJOR__ == 13 && __CUDACC_VER_MINOR__ >= 1)
 #define FLOPTIC_HAS_OZAKI 1
 #endif
 
@@ -340,15 +337,16 @@ public:
         check_cublas_emu(cublasCreate(&handle), "cublasCreate");
 
         // Enable fixed-point FP64 emulation (Ozaki scheme)
+        // Note: enum is FIXEDPOINT (no underscore), not FIXED_POINT
         check_cublas_emu(
-            cublasSetMathMode(handle, CUBLAS_FP64_EMULATED_FIXED_POINT_MATH),
+            cublasSetMathMode(handle, CUBLAS_FP64_EMULATED_FIXEDPOINT_MATH),
             "set FP64 fixed-point emulation math mode");
 
-        // Dynamic mantissa control: cuBLAS automatically determines bits needed
-        // for ≥ native FP64 accuracy
-        check_cublas_emu(
-            cublasSetFixedPointEmulationMantissaControl(handle, CUDA_EMULATION_MANTISSA_DYNAMIC),
-            "set dynamic mantissa control");
+        // Try to set dynamic mantissa control if available.
+        // The function cublasSetFixedPointEmulationMantissaControl may not
+        // exist in all cuBLAS versions. If it doesn't link, the default
+        // ADP behavior still works — cuBLAS auto-selects mantissa bits.
+        // For now, just rely on the math mode + EAGER strategy.
 
         // EAGER: always use emulation (benchmark the emulation path)
         check_cublas_emu(

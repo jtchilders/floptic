@@ -280,8 +280,29 @@ REGISTER_KERNEL(GemmCublasEmuFP32);
 // cuBLAS's Automatic Dynamic Precision (ADP) framework determines the number
 // of mantissa bits needed to match or exceed native FP64 accuracy.
 //
+// Requires CUBLAS_FP64_EMULATED_FIXED_POINT_MATH (cuBLAS 13.1+ / CUDA 13.0u2+).
 // Supported: sm_100+ (Blackwell) only
+//
+// The FP64 emulation API was added later than BF16x9; guard separately.
 // ============================================================================
+
+// Try to detect Ozaki API availability at compile time.
+// CUBLAS_FP64_EMULATED_FIXED_POINT_MATH is a cublasMath_t enum value, not a macro.
+// We check cuBLAS version at runtime instead, but still need the enum to compile.
+// Use a conservative CUDA version gate: CUDA 13.0u2 shipped as CUDA 13.0.2.
+// Since we can't distinguish 13.0.0 from 13.0.2 via __CUDACC_VER_MAJOR/MINOR__,
+// we gate on CUDA >= 13.1 to be safe. If your CUDA 13.0u2 build fails,
+// increase to >= 13.2.
+// Detect at compile time whether the Ozaki enum exists.
+// We attempt to use it inside a constexpr-friendly check; if the enum
+// is missing, the #if guard excludes the whole block.
+// For safety, require CUDA >= 13.2 (CUDA 13.0u2 introduced it, but
+// CUDA 13.1 on JLSE doesn't have it).
+#if (__CUDACC_VER_MAJOR__ > 13) || (__CUDACC_VER_MAJOR__ == 13 && __CUDACC_VER_MINOR__ >= 2)
+#define FLOPTIC_HAS_OZAKI 1
+#endif
+
+#ifdef FLOPTIC_HAS_OZAKI
 
 class GemmCublasEmuFP64 : public KernelBase {
 public:
@@ -345,6 +366,8 @@ public:
 };
 
 REGISTER_KERNEL(GemmCublasEmuFP64);
+
+#endif // FLOPTIC_HAS_OZAKI
 
 #endif // FLOPTIC_HAS_EMULATION
 

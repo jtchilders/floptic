@@ -55,6 +55,11 @@ public:
     virtual std::vector<Precision> supported_precisions() const = 0;
     virtual std::vector<std::string> supported_modes() const = 0;
 
+    // Check if this kernel can run on the given device.
+    // Override to add architecture-specific guards (e.g. Blackwell-only).
+    // Called before run() — if false, the kernel is silently skipped.
+    virtual bool is_available(const DeviceInfo& device) const { return true; }
+
     // Run the benchmark with given config, repeating for measurement_trials
     virtual KernelResult run(const KernelConfig& config,
                              const DeviceInfo& device,

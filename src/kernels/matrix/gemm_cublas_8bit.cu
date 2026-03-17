@@ -568,6 +568,16 @@ public:
         return {"throughput"};
     }
 
+    // Per-tensor FP8 scaling: Hopper (sm_89/sm_90) only.
+    // Blackwell (sm_100+) requires block scaling → use gemm_cublas_mxfp8 instead.
+    bool is_available(const DeviceInfo& device) const override {
+        if (device.arch.size() >= 5 && device.arch.substr(0, 3) == "sm_") {
+            int sm = std::stoi(device.arch.substr(3));
+            return sm >= 89 && sm < 100;
+        }
+        return false;
+    }
+
     KernelResult run(const KernelConfig& config,
                      const DeviceInfo& device,
                      int measurement_trials) override {

@@ -438,6 +438,16 @@ public:
         return {"throughput"};
     }
 
+    // MXFP8 block scaling only available on Blackwell (sm_100+)
+    bool is_available(const DeviceInfo& device) const override {
+        // Check arch string: "sm_100", "sm_120", etc.
+        if (device.arch.size() >= 5 && device.arch.substr(0, 3) == "sm_") {
+            int sm = std::stoi(device.arch.substr(3));
+            return sm >= 100;
+        }
+        return false;
+    }
+
     KernelResult run(const KernelConfig& config,
                      const DeviceInfo& device,
                      int measurement_trials) override {
@@ -446,14 +456,6 @@ public:
         if (pos != std::string::npos)
             dev_idx = std::stoi(device.id.substr(pos + 1));
         cudaSetDevice(dev_idx);
-
-        // Only available on Blackwell (sm_100+)
-        int major = 0;
-        cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev_idx);
-        if (major < 10) {
-            std::cerr << "  MXFP8 requires sm_100+ (Blackwell), skipping" << std::endl;
-            return KernelResult();
-        }
 
         return sweep_and_measure(device, measurement_trials,
             "gemm_cublas_mxfp8 [cuda/FP8_E4M3/throughput (block-scaled TC)]",
@@ -482,6 +484,15 @@ public:
         return {"throughput"};
     }
 
+    // NVFP4 block scaling only available on Blackwell (sm_100+)
+    bool is_available(const DeviceInfo& device) const override {
+        if (device.arch.size() >= 5 && device.arch.substr(0, 3) == "sm_") {
+            int sm = std::stoi(device.arch.substr(3));
+            return sm >= 100;
+        }
+        return false;
+    }
+
     KernelResult run(const KernelConfig& config,
                      const DeviceInfo& device,
                      int measurement_trials) override {
@@ -490,14 +501,6 @@ public:
         if (pos != std::string::npos)
             dev_idx = std::stoi(device.id.substr(pos + 1));
         cudaSetDevice(dev_idx);
-
-        // Only available on Blackwell (sm_100+)
-        int major = 0;
-        cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev_idx);
-        if (major < 10) {
-            std::cerr << "  NVFP4 requires sm_100+ (Blackwell), skipping" << std::endl;
-            return KernelResult();
-        }
 
         return sweep_and_measure(device, measurement_trials,
             "gemm_cublas_nvfp4 [cuda/FP4/throughput (block-scaled TC)]",

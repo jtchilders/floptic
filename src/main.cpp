@@ -167,6 +167,10 @@ int main(int argc, char* argv[]) {
             auto kernels = registry.get_kernels(cat, dev_backend);
 
             for (auto* kernel : kernels) {
+                // Skip kernels that aren't available on this device
+                if (!kernel->is_available(device))
+                    continue;
+
                 for (auto& precision : opts.precisions) {
                     if (!kernel->supports_precision(precision))
                         continue;

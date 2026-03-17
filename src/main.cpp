@@ -236,17 +236,17 @@ int main(int argc, char* argv[]) {
             if (d.id == dev_id) { dev_name = d.name; break; }
         }
 
-        std::cerr << "╔═════════════════════════════════════════════════════════════════════════════════════════╗" << std::endl;
+        std::cerr << "╔════════════════════════════════════════════════════════════════════════════════════════╗" << std::endl;
         std::cerr << "║  " << dev_id << " (" << dev_name << ")" << std::endl;
-        std::cerr << "╠═════════════════════════════════════════════════════════════════════════════════════════╣" << std::endl;
-        std::cerr << "║ Kernel                   │ Prec     │ Mode       │     Rate   │ Peak%  │ Median (ms) ║" << std::endl;
-        std::cerr << "╟──────────────────────────┼──────────┼────────────┼────────────┼────────┼─────────────╢" << std::endl;
+        std::cerr << "╠════════════════════════════════════════════════════════════════════════════════════════╣" << std::endl;
+        std::cerr << "║ Kernel                   │ Prec     │ Mode       │         Rate │  Peak% │ Median (ms) ║" << std::endl;
+        std::cerr << "╟──────────────────────────┼──────────┼────────────┼──────────────┼────────┼─────────────╢" << std::endl;
 
         std::string prev_kernel;
         for (auto* e : entries) {
             // Separator between different kernels
             if (!prev_kernel.empty() && prev_kernel != e->kernel_name) {
-                std::cerr << "╟──────────────────────────┼──────────┼────────────┼────────────┼────────┼─────────────╢" << std::endl;
+                std::cerr << "╟──────────────────────────┼──────────┼────────────┼──────────────┼────────┼─────────────╢" << std::endl;
             }
             prev_kernel = e->kernel_name;
 
@@ -254,28 +254,33 @@ int main(int argc, char* argv[]) {
             std::string kname = e->kernel_name;
             if (kname.size() > 24) kname = kname.substr(0, 24);
 
-            // Format rate with SI prefix
+            // Format rate with SI prefix + unit suffix
             // Memory kernels report GB/s; compute kernels report FLOP/s
+            // Target: right-justified, fixed-width 12-char field like "  244.2 TF/s"
             bool is_memory = (e->category == "memory");
-            char gflops_buf[16];
             double val = e->result.gflops;
-            const char* unit_suffix = is_memory ? "B/s" : "FLOP/s";
+            const char* suffix = is_memory ? "B/s" : "F/s";
 
+            double scaled;
+            char prefix;
             if (val >= 1e6) {
-                snprintf(gflops_buf, sizeof(gflops_buf), "%6.1f P", val / 1e6);
+                scaled = val / 1e6; prefix = 'P';
             } else if (val >= 1e3) {
-                snprintf(gflops_buf, sizeof(gflops_buf), "%6.1f T", val / 1e3);
+                scaled = val / 1e3; prefix = 'T';
             } else if (val >= 1.0) {
-                snprintf(gflops_buf, sizeof(gflops_buf), "%6.1f G", val);
+                scaled = val;       prefix = 'G';
             } else if (val >= 1e-3) {
-                snprintf(gflops_buf, sizeof(gflops_buf), "%6.1f M", val * 1e3);
+                scaled = val * 1e3; prefix = 'M';
             } else {
-                snprintf(gflops_buf, sizeof(gflops_buf), "%6.3f G", val);
+                scaled = val;       prefix = 'G';
             }
+
+            char rate_buf[20];
+            snprintf(rate_buf, sizeof(rate_buf), "%7.1f %c%s", scaled, prefix, suffix);
 
             // Format peak%
             char peak_buf[10];
-            snprintf(peak_buf, sizeof(peak_buf), "%5.1f%%", e->result.peak_percent);
+            snprintf(peak_buf, sizeof(peak_buf), "%6.1f%%", e->result.peak_percent);
 
             // Format time
             char time_buf[14];
@@ -285,12 +290,7 @@ int main(int argc, char* argv[]) {
             std::string mode = e->mode;
             if (mode.size() > 10) mode = mode.substr(0, 10);
 
-            // Build rate string with unit
-            char rate_buf[16];
-            snprintf(rate_buf, sizeof(rate_buf), "%s%s", gflops_buf,
-                     is_memory ? "B/s" : "F/s");
-
-            fprintf(stderr, "║ %-24s │ %-8s │ %-10s │ %10s │ %6s │ %11s ║\n",
+            fprintf(stderr, "║ %-24s │ %-8s │ %-10s │ %12s │ %6s │ %11s ║\n",
                     kname.c_str(),
                     e->precision.c_str(),
                     mode.c_str(),
@@ -299,7 +299,7 @@ int main(int argc, char* argv[]) {
                     time_buf);
         }
 
-        std::cerr << "╚═════════════════════════════════════════════════════════════════════════════════════════╝" << std::endl;
+        std::cerr << "╚════════════════════════════════════════════════════════════════════════════════════════╝" << std::endl;
         std::cerr << std::endl;
     }
 

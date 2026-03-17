@@ -28,6 +28,13 @@ namespace floptic {
         extern void gemm_cublas_emu_fp32_link();
         extern void gemm_cublas_emu_fp64_link();
 #endif
+#ifdef FLOPTIC_HAS_HIP
+        extern void scalar_fma_hip_link();
+        extern void vector_axpy_hip_link();
+        extern void stream_triad_hip_link();
+        extern void stream_copy_hip_link();
+        extern void gemm_rocblas_link();
+#endif
     }
     static void force_link_all() {
         force_link::scalar_fma_cpu_link();
@@ -46,6 +53,13 @@ namespace floptic {
         force_link::gemm_cublas_emu_fp32_link();
         force_link::gemm_cublas_emu_fp64_link();
 #endif
+#ifdef FLOPTIC_HAS_HIP
+        force_link::scalar_fma_hip_link();
+        force_link::vector_axpy_hip_link();
+        force_link::stream_triad_hip_link();
+        force_link::stream_copy_hip_link();
+        force_link::gemm_rocblas_link();
+#endif
     }
 }
 
@@ -59,8 +73,13 @@ std::vector<DeviceInfo> discover_devices() {
     all.insert(all.end(), cpus.begin(), cpus.end());
 
 #ifdef FLOPTIC_HAS_CUDA
-    auto gpus = discover_cuda_devices();
-    all.insert(all.end(), gpus.begin(), gpus.end());
+    auto cuda_gpus = discover_cuda_devices();
+    all.insert(all.end(), cuda_gpus.begin(), cuda_gpus.end());
+#endif
+
+#ifdef FLOPTIC_HAS_HIP
+    auto hip_gpus = discover_hip_devices();
+    all.insert(all.end(), hip_gpus.begin(), hip_gpus.end());
 #endif
 
     return all;
@@ -107,6 +126,9 @@ int main(int argc, char* argv[]) {
 #ifdef FLOPTIC_HAS_CUDA
         info_report.build_backends.push_back("cuda");
 #endif
+#ifdef FLOPTIC_HAS_HIP
+        info_report.build_backends.push_back("hip");
+#endif
         write_json_report(info_report, opts.output_path);
         return 0;
     }
@@ -129,6 +151,12 @@ int main(int argc, char* argv[]) {
         bool selected = false;
         for (auto& d : opts.devices) {
             if (d == "all" || d == dev.id || d == dev.type) {
+                selected = true;
+                break;
+            }
+            // Allow --device=cuda or --device=hip to match by backend prefix
+            if ((d == "cuda" && dev.id.substr(0, 4) == "cuda") ||
+                (d == "hip"  && dev.id.substr(0, 3) == "hip")) {
                 selected = true;
                 break;
             }

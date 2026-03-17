@@ -96,11 +96,54 @@ if(FLOPTIC_HAS_CUDA)
     target_compile_definitions(floptic_core PUBLIC FLOPTIC_HAS_CUDA)
 endif()
 
+# --- HIP backend ---
+if(FLOPTIC_HAS_HIP)
+    # HIP .cpp files are compiled with hipcc via CMAKE_CXX_COMPILER
+    add_library(floptic_hip STATIC
+        src/device/hip_device_info.cpp
+        src/kernels/scalar/scalar_fma_hip.cpp
+        src/kernels/vector/vector_axpy_hip.cpp
+        src/kernels/vector/stream_triad_hip.cpp
+        src/kernels/matrix/gemm_rocblas.cpp
+    )
+    target_include_directories(floptic_hip PUBLIC include)
+    target_link_libraries(floptic_hip PUBLIC nlohmann_json::nlohmann_json)
+    target_compile_definitions(floptic_hip PUBLIC FLOPTIC_HAS_HIP)
+
+    # Link rocBLAS
+    find_library(ROCBLAS_LIBRARY rocblas HINTS $ENV{ROCM_PATH}/lib /opt/rocm/lib)
+    if(ROCBLAS_LIBRARY)
+        target_link_libraries(floptic_hip PUBLIC ${ROCBLAS_LIBRARY})
+        message(STATUS "Floptic: rocBLAS found for GEMM benchmarks")
+    else()
+        message(WARNING "Floptic: rocBLAS not found — GEMM benchmarks will fail at runtime")
+    endif()
+
+    # Find HIP include directories
+    find_path(HIP_INCLUDE_DIR hip/hip_runtime.h
+        HINTS $ENV{ROCM_PATH}/include $ENV{HIP_PATH}/include /opt/rocm/include)
+    if(HIP_INCLUDE_DIR)
+        target_include_directories(floptic_hip PUBLIC ${HIP_INCLUDE_DIR})
+    endif()
+
+    find_path(ROCBLAS_INCLUDE_DIR rocblas/rocblas.h
+        HINTS $ENV{ROCM_PATH}/include /opt/rocm/include)
+    if(ROCBLAS_INCLUDE_DIR)
+        target_include_directories(floptic_hip PUBLIC ${ROCBLAS_INCLUDE_DIR})
+    endif()
+
+    # Propagate HIP flag to core
+    target_compile_definitions(floptic_core PUBLIC FLOPTIC_HAS_HIP)
+endif()
+
 # --- Main executable ---
 add_executable(floptic src/main.cpp)
 target_link_libraries(floptic PRIVATE floptic_core)
 if(FLOPTIC_HAS_CUDA)
     target_link_libraries(floptic PRIVATE floptic_cuda)
+endif()
+if(FLOPTIC_HAS_HIP)
+    target_link_libraries(floptic PRIVATE floptic_hip)
 endif()
 
 # --- Summary ---

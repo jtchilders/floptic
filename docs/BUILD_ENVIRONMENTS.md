@@ -96,6 +96,105 @@ make -C build_gpu_a100 -j
 
 ---
 
+## JLSE AMD GPU Nodes
+
+### MI100 — CDNA1 (gfx908)
+
+**Node**: `gpu_amd_mi100`
+**GPU**: AMD Instinct MI100, 120 CUs, 1502 MHz, 32 GB HBM2
+**Architecture**: CDNA1 (gfx908)
+
+```bash
+# TODO: confirm modules available on JLSE MI100 nodes
+module load rocm cmake gcc
+
+cmake -B build_gpu_mi100 \
+    -DCMAKE_CXX_COMPILER=hipcc \
+    -DFLOPTIC_ENABLE_CUDA=OFF \
+    -DFLOPTIC_ENABLE_HIP=ON \
+    -DGPU_TARGETS=gfx908
+make -C build_gpu_mi100 -j
+```
+
+**Notes**:
+- CDNA1: FP64 = half-rate FP32 (32 FMA/CU/clk vs 64)
+- Matrix cores support FP64, FP32, FP16, BF16, INT8
+- No TF32, no FP8
+
+### MI250X — CDNA2 (gfx90a)
+
+**Node**: `gpu_amd_mi250`
+**GPU**: AMD Instinct MI250X, 2 GCDs (each reported as separate HIP device)
+**Per GCD**: 110 CUs, 1700 MHz, 64 GB HBM2e
+**Architecture**: CDNA2 (gfx90a)
+
+```bash
+# TODO: confirm modules
+module load rocm cmake gcc
+
+cmake -B build_gpu_mi250 \
+    -DCMAKE_CXX_COMPILER=hipcc \
+    -DFLOPTIC_ENABLE_CUDA=OFF \
+    -DFLOPTIC_ENABLE_HIP=ON \
+    -DGPU_TARGETS=gfx90a
+make -C build_gpu_mi250 -j
+```
+
+**Notes**:
+- 2 GCDs per card — each is a separate HIP device (hip:0, hip:1)
+- Full-rate FP64 (64 FMA/CU/clk)
+- Matrix cores: FP64, FP32, FP16, BF16, INT8
+- No TF32, no FP8
+
+### MI300X — CDNA3 (gfx942)
+
+**Node**: `gpu_amd_mi300x`
+**GPU**: AMD Instinct MI300X, 304 CUs (8 XCDs × 38 CUs), 2100 MHz, 192 GB HBM3
+**Architecture**: CDNA3 (gfx942)
+
+```bash
+# TODO: confirm modules
+module load rocm cmake gcc
+
+cmake -B build_gpu_mi300x \
+    -DCMAKE_CXX_COMPILER=hipcc \
+    -DFLOPTIC_ENABLE_CUDA=OFF \
+    -DFLOPTIC_ENABLE_HIP=ON \
+    -DGPU_TARGETS=gfx942
+make -C build_gpu_mi300x -j
+```
+
+**Notes**:
+- CDNA3: full-rate FP64, TF32 support, FP8 support
+- Matrix cores: FP64, FP32, TF32, FP16, BF16, INT8, FP8
+- Specs: 163.4 TF/s FP64 matrix, 1307.4 TF/s FP16 matrix, 2614.9 TF/s FP8 matrix
+- 5.3 TB/s HBM3 bandwidth
+
+### MI300A — CDNA3 APU (gfx942)
+
+**Node**: `gpu_amd_mi300a`
+**GPU**: AMD Instinct MI300A (APU), 228 CUs, 2100 MHz, 128 GB unified HBM3
+**Architecture**: CDNA3 (gfx942)
+
+```bash
+# TODO: confirm modules
+module load rocm cmake gcc
+
+cmake -B build_gpu_mi300a \
+    -DCMAKE_CXX_COMPILER=hipcc \
+    -DFLOPTIC_ENABLE_CUDA=OFF \
+    -DFLOPTIC_ENABLE_HIP=ON \
+    -DGPU_TARGETS=gfx942
+make -C build_gpu_mi300a -j
+```
+
+**Notes**:
+- APU: shared CPU + GPU die with unified memory
+- Same CDNA3 ISA as MI300X but fewer CUs (228 vs 304)
+- Specs: 122.6 TF/s FP64 matrix, 980.6 TF/s FP16 matrix
+
+---
+
 ## Polaris (ALCF)
 
 **GPU**: NVIDIA A100 PCIe

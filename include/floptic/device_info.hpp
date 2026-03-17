@@ -7,10 +7,12 @@
 namespace floptic {
 
 enum class Feature {
-    TENSOR_CORES,
-    FP64_TENSOR,
+    TENSOR_CORES,       // NVIDIA tensor cores
+    FP64_TENSOR,        // NVIDIA FP64 tensor cores (A100, H100)
     STRUCTURED_SPARSITY,
-    MFMA,
+    MATRIX_CORES,       // AMD MFMA matrix cores
+    FP64_MATRIX,        // AMD FP64 matrix cores (all CDNA)
+    MFMA,               // (alias, kept for compat)
     AMX_BF16,
     AMX_INT8,
     AVX2,
@@ -24,6 +26,8 @@ inline std::string feature_to_string(Feature f) {
         case Feature::TENSOR_CORES:       return "tensor_cores";
         case Feature::FP64_TENSOR:        return "fp64_tensor";
         case Feature::STRUCTURED_SPARSITY:return "structured_sparsity";
+        case Feature::MATRIX_CORES:       return "matrix_cores";
+        case Feature::FP64_MATRIX:        return "fp64_matrix";
         case Feature::MFMA:               return "mfma";
         case Feature::AMX_BF16:           return "amx_bf16";
         case Feature::AMX_INT8:           return "amx_int8";

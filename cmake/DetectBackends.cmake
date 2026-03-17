@@ -34,11 +34,19 @@ endif()
 
 # --- HIP ---
 if(FLOPTIC_ENABLE_HIP)
-    find_package(hip QUIET)
+    # Try cmake package first
+    find_package(hip QUIET CONFIG)
     if(hip_FOUND)
         set(FLOPTIC_HAS_HIP ON)
-        message(STATUS "Floptic: HIP detected")
+        message(STATUS "Floptic: HIP detected via cmake package (${hip_VERSION})")
     else()
-        message(STATUS "Floptic: HIP not detected")
+        # Fallback: check if hipcc is in PATH
+        find_program(HIPCC_EXECUTABLE hipcc)
+        if(HIPCC_EXECUTABLE)
+            set(FLOPTIC_HAS_HIP ON)
+            message(STATUS "Floptic: HIP detected via hipcc (${HIPCC_EXECUTABLE})")
+        else()
+            message(STATUS "Floptic: HIP not detected")
+        endif()
     endif()
 endif()

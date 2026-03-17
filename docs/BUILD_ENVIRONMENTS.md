@@ -79,7 +79,7 @@ make -C build_gpu_h100 -j
 **OS**: Linux x86_64
 
 ```bash
-module load cmake/3.26.5 gcc/9.5.0 cuda/11.8.0
+module load cmake/3.26.5 gcc/11.1.0 cuda/11.6.2
 
 cmake -B build_gpu_a100 -DCMAKE_CUDA_ARCHITECTURES=80 \
     -DCMAKE_CXX_COMPILER=g++ -DCMAKE_CUDA_HOST_COMPILER=g++
@@ -89,7 +89,10 @@ make -C build_gpu_a100 -j
 **Notes**:
 - No FP8, no FP4, no emulated precision
 - Has FP64 tensor cores
-- CUDA 11.8 is oldest supported version
+- A100 PCIe 40GB (108 SMs, 1410 MHz) — lower clocks than SXM variant
+- Clean 1:1:7.5:15.5 ratio for FP64:FP32:TF32:FP16
+- Scalar FMA achieves 97–99% peak across all precisions (cleanest architecture)
+- CPU: AMD EPYC 7532 (32 cores, AVX2)
 
 ---
 

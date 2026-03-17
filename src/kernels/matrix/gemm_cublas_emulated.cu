@@ -342,11 +342,11 @@ public:
             cublasSetMathMode(handle, CUBLAS_FP64_EMULATED_FIXEDPOINT_MATH),
             "set FP64 fixed-point emulation math mode");
 
-        // Try to set dynamic mantissa control if available.
-        // The function cublasSetFixedPointEmulationMantissaControl may not
-        // exist in all cuBLAS versions. If it doesn't link, the default
-        // ADP behavior still works — cuBLAS auto-selects mantissa bits.
-        // For now, just rely on the math mode + EAGER strategy.
+        // Dynamic mantissa control: cuBLAS automatically determines bits needed
+        // for ≥ native FP64 accuracy (ADP framework)
+        check_cublas_emu(
+            cublasSetFixedPointEmulationMantissaControl(handle, CUDA_EMULATION_MANTISSA_CONTROL_DYNAMIC),
+            "set dynamic mantissa control");
 
         // EAGER: always use emulation (benchmark the emulation path)
         check_cublas_emu(

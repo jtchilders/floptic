@@ -58,7 +58,7 @@ make -C build_gpu_gh200 -j
 **OS**: Linux x86_64
 
 ```bash
-module load cmake gcc/12.2.0 cuda/12.3.0
+module load cmake gcc/12.2.0 cuda/13.1
 
 cmake -B build_gpu_h100 -DCMAKE_CUDA_ARCHITECTURES=90 \
     -DCMAKE_CXX_COMPILER=g++ -DCMAKE_CUDA_HOST_COMPILER=g++
@@ -66,9 +66,10 @@ make -C build_gpu_h100 -j
 ```
 
 **Notes**:
-- FP8 per-tensor most likely to work here (x86_64 + sm_90)
 - Has FP64 tensor cores (unlike Blackwell)
-- CUDA 12.3 does NOT support emulated precision kernels (requires 13.1+)
+- CUDA 13.1 enables BF16×9 emulated FP32 (but cuBLAS doesn't engage emulation on Hopper — returns native FP32 rate)
+- FP8 per-tensor still fails (0.000 GF/s) even on x86_64 with CUDA 13.1
+- INT8 TC only finds slow algorithms (103–133 TF/s, ~5% of peak)
 
 ### A100 — Ampere (sm_80)
 

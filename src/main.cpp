@@ -236,23 +236,23 @@ int main(int argc, char* argv[]) {
             if (d.id == dev_id) { dev_name = d.name; break; }
         }
 
-        std::cerr << "╔══════════════════════════════════════════════════════════════════════════════════╗" << std::endl;
+        std::cerr << "╔═════════════════════════════════════════════════════════════════════════════════════════╗" << std::endl;
         std::cerr << "║  " << dev_id << " (" << dev_name << ")" << std::endl;
-        std::cerr << "╠══════════════════════════════════════════════════════════════════════════════════╣" << std::endl;
-        std::cerr << "║ Kernel              │ Prec │ Mode       │     Rate   │ Peak%  │ Median (ms) ║" << std::endl;
-        std::cerr << "╟─────────────────────┼──────┼────────────┼────────────┼────────┼─────────────╢" << std::endl;
+        std::cerr << "╠═════════════════════════════════════════════════════════════════════════════════════════╣" << std::endl;
+        std::cerr << "║ Kernel                   │ Prec     │ Mode       │     Rate   │ Peak%  │ Median (ms) ║" << std::endl;
+        std::cerr << "╟──────────────────────────┼──────────┼────────────┼────────────┼────────┼─────────────╢" << std::endl;
 
         std::string prev_kernel;
         for (auto* e : entries) {
             // Separator between different kernels
             if (!prev_kernel.empty() && prev_kernel != e->kernel_name) {
-                std::cerr << "╟─────────────────────┼──────┼────────────┼────────────┼────────┼─────────────╢" << std::endl;
+                std::cerr << "╟──────────────────────────┼──────────┼────────────┼────────────┼────────┼─────────────╢" << std::endl;
             }
             prev_kernel = e->kernel_name;
 
-            // Format kernel name (truncate to 19 chars)
+            // Format kernel name (truncate to 24 chars)
             std::string kname = e->kernel_name;
-            if (kname.size() > 19) kname = kname.substr(0, 19);
+            if (kname.size() > 24) kname = kname.substr(0, 24);
 
             // Format rate with SI prefix
             // Memory kernels report GB/s; compute kernels report FLOP/s
@@ -290,7 +290,7 @@ int main(int argc, char* argv[]) {
             snprintf(rate_buf, sizeof(rate_buf), "%s%s", gflops_buf,
                      is_memory ? "B/s" : "F/s");
 
-            fprintf(stderr, "║ %-19s │ %-4s │ %-10s │ %10s │ %6s │ %11s ║\n",
+            fprintf(stderr, "║ %-24s │ %-8s │ %-10s │ %10s │ %6s │ %11s ║\n",
                     kname.c_str(),
                     e->precision.c_str(),
                     mode.c_str(),
@@ -299,7 +299,7 @@ int main(int argc, char* argv[]) {
                     time_buf);
         }
 
-        std::cerr << "╚══════════════════════════════════════════════════════════════════════════════════╝" << std::endl;
+        std::cerr << "╚═════════════════════════════════════════════════════════════════════════════════════════╝" << std::endl;
         std::cerr << std::endl;
     }
 

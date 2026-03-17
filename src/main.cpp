@@ -23,6 +23,8 @@ namespace floptic {
         extern void gemm_cublas_notc_link();
         extern void gemm_cublas_int8_link();
         extern void gemm_cublas_fp8_link();
+        extern void gemm_cublas_mxfp8_link();
+        extern void gemm_cublas_nvfp4_link();
 #endif
     }
     static void force_link_all() {
@@ -37,6 +39,8 @@ namespace floptic {
         force_link::gemm_cublas_notc_link();
         force_link::gemm_cublas_int8_link();
         force_link::gemm_cublas_fp8_link();
+        force_link::gemm_cublas_mxfp8_link();
+        force_link::gemm_cublas_nvfp4_link();
 #endif
     }
 }

@@ -166,7 +166,7 @@ void write_markdown_report(const Report& report, const std::string& output_path)
 
         // Key ratios section (compute from GEMM results)
         double fp64_gemm = 0, fp32_gemm = 0, fp16_gemm = 0, bf16_gemm = 0;
-        double tf32_gemm = 0, int8_gemm = 0;
+        double tf32_gemm = 0, int8_gemm = 0, fp8_gemm = 0, fp4_gemm = 0;
 
         for (auto* e : by_device[dev.id]) {
             if (e->kernel_name != "gemm_cublas") continue;
@@ -179,6 +179,13 @@ void write_markdown_report(const Report& report, const std::string& output_path)
         for (auto* e : by_device[dev.id]) {
             if (e->kernel_name == "gemm_cublas_int8" && e->precision == "INT8")
                 int8_gemm = e->result.gflops;
+            // MXFP8 (block-scaled) or per-tensor FP8
+            if ((e->kernel_name == "gemm_cublas_mxfp8" || e->kernel_name == "gemm_cublas_fp8")
+                && e->precision == "FP8_E4M3" && e->result.gflops > fp8_gemm)
+                fp8_gemm = e->result.gflops;
+            // NVFP4 (block-scaled)
+            if (e->kernel_name == "gemm_cublas_nvfp4" && e->precision == "FP4")
+                fp4_gemm = e->result.gflops;
         }
 
         if (fp64_gemm > 0 && (fp16_gemm > 0 || tf32_gemm > 0)) {
@@ -211,9 +218,19 @@ void write_markdown_report(const Report& report, const std::string& output_path)
                 snprintf(buf, sizeof(buf), "%.1f×", bf16_gemm / fp64_gemm);
                 out << buf << " |\n";
             }
+            if (fp8_gemm > 0) {
+                out << "| FP8 (E4M3) | " << format_rate(fp8_gemm, false) << " | ";
+                snprintf(buf, sizeof(buf), "%.1f×", fp8_gemm / fp64_gemm);
+                out << buf << " |\n";
+            }
             if (int8_gemm > 0) {
                 out << "| INT8 | " << format_rate(int8_gemm, false) << " | ";
                 snprintf(buf, sizeof(buf), "%.1f×", int8_gemm / fp64_gemm);
+                out << buf << " |\n";
+            }
+            if (fp4_gemm > 0) {
+                out << "| FP4 (E2M1) | " << format_rate(fp4_gemm, false) << " | ";
+                snprintf(buf, sizeof(buf), "%.1f×", fp4_gemm / fp64_gemm);
                 out << buf << " |\n";
             }
             out << "\n";

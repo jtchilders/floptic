@@ -50,7 +50,7 @@ inline Precision string_to_precision(const std::string& s) {
 
 inline std::vector<Precision> all_standard_precisions() {
     return { Precision::FP64, Precision::FP32, Precision::TF32, Precision::FP16, Precision::BF16,
-             Precision::FP8_E4M3, Precision::FP8_E5M2, Precision::INT8 };
+             Precision::FP8_E4M3, Precision::FP8_E5M2, Precision::FP4, Precision::INT8 };
 }
 
 // Type mapping for compile-time dispatch

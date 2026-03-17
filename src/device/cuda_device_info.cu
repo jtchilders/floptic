@@ -113,6 +113,17 @@ static double tc_fp8_fma_per_sm_per_clock(int major, int minor) {
     }
 }
 
+// FP4 tensor core FMA per SM per clock (Blackwell+)
+// FP4 TC rate = 2× FP8 TC rate on Blackwell
+// B200 HGX: 9000 TF/s dense → 9000e3 / (148 × 1.965 × 2) = 15474 FMA/SM/clk
+// But datasheet says 4500/9000 dense/sparse — FP4 dense = FP8 sparse = 2× FP8 dense
+static double tc_fp4_fma_per_sm_per_clock(int major, int minor) {
+    switch (major) {
+        case 10: return 15474;            // B200: HGX 9000 TF/s dense @ 148 SM × 1965 MHz
+        default: return 0;                // No FP4 TC before Blackwell
+    }
+}
+
 // ============================================================================
 // Tensor core theoretical peaks (GEMM-specific, per SM per clock)
 // These are for reference in the device info; used by matrix kernels
@@ -220,6 +231,11 @@ std::vector<DeviceInfo> discover_cuda_devices() {
             dev.supported_precisions.push_back(Precision::FP8_E5M2);
         }
 
+        // FP4 (NVFP4): Blackwell+ tensor cores (sm_100+)
+        if (props.major >= 10) {
+            dev.supported_precisions.push_back(Precision::FP4);
+        }
+
         // --- Features ---
         dev.features.push_back(Feature::FMA_HW);
 
@@ -270,6 +286,10 @@ std::vector<DeviceInfo> discover_cuda_devices() {
         double tc_fp8 = tc_fp8_fma_per_sm_per_clock(props.major, props.minor);
         if (tc_fp8 > 0)
             dev.theoretical_peak_gflops["FP8_TC"] = sms * clock_ghz * tc_fp8 * 2.0;
+
+        double tc_fp4 = tc_fp4_fma_per_sm_per_clock(props.major, props.minor);
+        if (tc_fp4 > 0)
+            dev.theoretical_peak_gflops["FP4_TC"] = sms * clock_ghz * tc_fp4 * 2.0;
 
         // Print summary
         std::cerr << "  CUDA " << dev.id << " (" << dev.name << "):" << std::endl;

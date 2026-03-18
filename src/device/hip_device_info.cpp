@@ -49,8 +49,8 @@ static double fp64_flops_per_cu_per_clock(int cdna_gen) {
 static double fp32_flops_per_cu_per_clock(int cdna_gen) {
     switch (cdna_gen) {
         case 1: return 128;  // MI100: 64 FP32 FMA/CU/clk × 2 = 128 FLOP
-        case 2: return 128;  // MI250X
-        case 3: return 128;  // MI300X
+        case 2: return 256;  // MI250X: packed FP32 (v_pk_fma_f32) = 2× CDNA1
+        case 3: return 256;  // MI300X: packed FP32
         default: return 128;
     }
 }

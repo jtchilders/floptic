@@ -105,8 +105,7 @@ make -C build_gpu_a100 -j
 **Architecture**: CDNA1 (gfx908)
 
 ```bash
-# TODO: confirm modules available on JLSE MI100 nodes
-module load rocm cmake gcc
+module load rocm/6.4.3 cmake/3.28.3 gcc/13.3.0
 
 cmake -B build_gpu_mi100 \
     -DCMAKE_CXX_COMPILER=hipcc \
@@ -117,6 +116,8 @@ make -C build_gpu_mi100 -j
 ```
 
 **Notes**:
+- Node: `amdgpu02`, 4× MI100 (gfx908)
+- ROCm 6.4.3, HIP 6.4, AMD clang 19.0
 - CDNA1: FP64 = half-rate FP32 (32 FMA/CU/clk vs 64)
 - Matrix cores support FP64, FP32, FP16, BF16, INT8
 - No TF32, no FP8

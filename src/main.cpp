@@ -190,9 +190,13 @@ int main(int argc, char* argv[]) {
     for (auto& device : target_devices) {
         std::cerr << "\n=== Device: " << device.id << " (" << device.name << ") ===" << std::endl;
 
-        // Determine backend for this device
-        std::string dev_backend = (device.type == "gpu") ? "cuda" : "cpu";
-        // TODO: distinguish cuda vs hip vs sycl based on device.id prefix
+        // Determine backend for this device based on id prefix
+        std::string dev_backend = "cpu";
+        if (device.id.substr(0, 4) == "cuda") {
+            dev_backend = "cuda";
+        } else if (device.id.substr(0, 3) == "hip") {
+            dev_backend = "hip";
+        }
 
         // Get matching kernels
         for (auto& cat : opts.kernel_categories) {

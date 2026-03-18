@@ -296,14 +296,48 @@ public:
                 break;
             }
             case Precision::INT8: {
-                // INT8 output is INT32
-                sr = sweep_and_measure<int8_t>(handle,
-                    [](rocblas_handle h, int M, int N, int K, int8_t* A, int8_t* B, int8_t* C) -> float {
-                        // C buffer is actually int32 but typed as int8 for template; allocate separately
-                        int32_t* C32 = reinterpret_cast<int32_t*>(C);
-                        return run_int8gemm(h, M, N, K, A, B, C32);
-                    },
-                    sizeof(int8_t), measurement_trials);
+                // INT8 inputs, INT32 output — need separate allocation
+                std::vector<int> sizes_i8 = {1024, 2048, 4096, 8192, 16384};
+                sr = {0, 1e9f, 0.0};
+                for (int M : sizes_i8) {
+                    int64_t ab_bytes = (int64_t)M * M * sizeof(int8_t);
+                    int64_t c_bytes  = (int64_t)M * M * sizeof(int32_t);
+                    if (ab_bytes * 2 + c_bytes > 6LL * 1024 * 1024 * 1024) continue;
+
+                    int8_t *A = nullptr, *B = nullptr;
+                    int32_t *C = nullptr;
+                    if (hipMalloc(&A, ab_bytes) != hipSuccess) continue;
+                    hipMalloc(&B, ab_bytes);
+                    hipMalloc(&C, c_bytes);
+                    hipMemset(A, 0, ab_bytes);
+                    hipMemset(B, 0, ab_bytes);
+                    hipMemset(C, 0, c_bytes);
+
+                    // Warmup
+                    run_int8gemm(handle, M, M, M, A, B, C);
+                    run_int8gemm(handle, M, M, M, A, B, C);
+                    hipDeviceSynchronize();
+
+                    std::vector<float> times;
+                    for (int t = 0; t < measurement_trials; t++) {
+                        float ms = run_int8gemm(handle, M, M, M, A, B, C);
+                        if (ms > 0) times.push_back(ms);
+                    }
+
+                    hipFree(A); hipFree(B); hipFree(C);
+
+                    if (times.empty()) continue;
+                    std::sort(times.begin(), times.end());
+                    float median_ms = times[times.size() / 2];
+                    double flops = 2.0 * (double)M * M * M;
+                    double gflops = (flops / (median_ms * 1e-3)) / 1e9;
+
+                    if (gflops > sr.best_gflops) {
+                        sr.best_M = M;
+                        sr.best_ms = median_ms;
+                        sr.best_gflops = gflops;
+                    }
+                }
                 peak_key = device.theoretical_peak_gflops.count("INT8_MFMA") ? "INT8_MFMA" : "INT8";
                 break;
             }

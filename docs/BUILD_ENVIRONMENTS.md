@@ -105,7 +105,8 @@ make -C build_gpu_a100 -j
 **Architecture**: CDNA1 (gfx908)
 
 ```bash
-module load rocm/6.4.3 cmake/3.28.3 gcc/13.3.0
+# Build: rocm/6.3.2 + gcc/12.2.0 (rocm/6.4.3 has lld crash with gcc/13.3.0)
+module load rocm/6.3.2 cmake/3.28.3 gcc/12.2.0
 
 cmake -B build_gpu_mi100 \
     -DCMAKE_CXX_COMPILER=hipcc \
@@ -113,11 +114,16 @@ cmake -B build_gpu_mi100 \
     -DFLOPTIC_ENABLE_HIP=ON \
     -DGPU_TARGETS=gfx908
 make -C build_gpu_mi100 -j
+
+# Run: swap to gcc/13.3.0 (ROCm libs need GLIBCXX_3.4.32)
+module swap gcc/12.2.0 gcc/13.3.0
+./build_gpu_mi100/floptic --device=hip:0 --precision=all
 ```
 
 **Notes**:
-- Node: `amdgpu02`, 4× MI100 (gfx908)
-- ROCm 6.4.3, HIP 6.4, AMD clang 19.0
+- Node: `amdgpu02`/`amdgpu03`, 4× MI100 (gfx908)
+- ROCm 6.3.2, HIP 6.3, AMD clang 18.0
+- Build with gcc/12.2.0, run with gcc/13.3.0 (ABI mismatch workaround)
 - CDNA1: FP64 = half-rate FP32 (32 FMA/CU/clk vs 64)
 - Matrix cores support FP64, FP32, FP16, BF16, INT8
 - No TF32, no FP8

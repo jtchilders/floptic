@@ -78,7 +78,7 @@ public:
                           int64_t N, size_t elem_sz) {
             using T = std::remove_pointer_t<decltype(x_ptr)>;
             // Warmup
-            for (int w = 0; w < config.warmup; w++)
+            for (int w = 0; w < 10; w++)
                 run_axpy(blocks, tpb, alpha_val, x_ptr, y_ptr, N);
 
             std::vector<double> times;
@@ -94,8 +94,6 @@ public:
             result.median_time_ms = median_ms;
             result.min_time_ms = times.front();
             result.max_time_ms = times.back();
-            double sum = 0; for (auto t : times) sum += t;
-            result.mean_time_ms = sum / times.size();
         };
 
         int64_t N = 10 * 1024 * 1024;  // 10M elements

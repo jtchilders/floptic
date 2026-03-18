@@ -317,7 +317,6 @@ public:
         result.median_time_ms = sr.best_ms;
         result.min_time_ms = sr.best_ms;
         result.max_time_ms = sr.best_ms;
-        result.mean_time_ms = sr.best_ms;
 
         auto it = device.theoretical_peak_gflops.find(peak_key);
         if (it != device.theoretical_peak_gflops.end() && it->second > 0) {

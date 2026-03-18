@@ -122,7 +122,7 @@ public:
             hipMemset(c, 0, N * sizeof(double));
 
             // Warmup
-            for (int w = 0; w < config.warmup; w++)
+            for (int w = 0; w < 10; w++)
                 run_triad(blocks, tpb, a, b, c, 2.0, N);
 
             std::vector<double> times;
@@ -143,8 +143,6 @@ public:
             result.median_time_ms = median_ms;
             result.min_time_ms = times.front();
             result.max_time_ms = times.back();
-            double sum = 0; for (auto t : times) sum += t;
-            result.mean_time_ms = sum / times.size();
         } else {
             float *a, *b, *c;
             hipMalloc(&a, N * sizeof(float));
@@ -154,7 +152,7 @@ public:
             hipMemset(b, 0, N * sizeof(float));
             hipMemset(c, 0, N * sizeof(float));
 
-            for (int w = 0; w < config.warmup; w++)
+            for (int w = 0; w < 10; w++)
                 run_triad(blocks, tpb, a, b, c, 2.0f, N);
 
             std::vector<double> times;
@@ -174,8 +172,6 @@ public:
             result.median_time_ms = median_ms;
             result.min_time_ms = times.front();
             result.max_time_ms = times.back();
-            double sum = 0; for (auto t : times) sum += t;
-            result.mean_time_ms = sum / times.size();
         }
 
         return result;
@@ -224,7 +220,7 @@ public:
         hipMemset(a, 0, N * sizeof(double));
         hipMemset(b, 0, N * sizeof(double));
 
-        for (int w = 0; w < config.warmup; w++)
+        for (int w = 0; w < 10; w++)
             run_copy(blocks, tpb, a, b, N);
 
         std::vector<double> times;
@@ -245,8 +241,6 @@ public:
         result.median_time_ms = median_ms;
         result.min_time_ms = times.front();
         result.max_time_ms = times.back();
-        double sum = 0; for (auto t : times) sum += t;
-        result.mean_time_ms = sum / times.size();
 
         return result;
     }

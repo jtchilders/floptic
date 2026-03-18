@@ -9,6 +9,12 @@ KernelRegistry& KernelRegistry::instance() {
 }
 
 void KernelRegistry::register_kernel(std::unique_ptr<KernelBase> kernel) {
+    // Guard against duplicate registration (can happen with static init + force_link)
+    for (auto& k : kernels_) {
+        if (k->name() == kernel->name() && k->backend() == kernel->backend()) {
+            return;  // Already registered
+        }
+    }
     kernels_.push_back(std::move(kernel));
 }
 

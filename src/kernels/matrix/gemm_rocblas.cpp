@@ -187,13 +187,17 @@ static SweepResult sweep_and_measure(rocblas_handle handle,
                                       RunFn run_fn,
                                       int elem_size,
                                       int measurement_trials) {
-    std::vector<int> sizes = {1024, 2048, 4096, 8192, 16384};
+    std::vector<int> sizes = {1024, 2048, 4096, 8192, 16384, 32768};
     SweepResult best = {0, 1e9f, 0.0};
+
+    // Use up to 75% of available GPU memory for sweep allocations
+    size_t free_mem = 0, total_mem = 0;
+    hipMemGetInfo(&free_mem, &total_mem);
+    int64_t mem_limit = (int64_t)(free_mem * 0.75);
 
     for (int M : sizes) {
         int64_t total_bytes = (int64_t)M * M * 3 * elem_size;
-        // Skip if would use too much memory (leave 1 GB margin)
-        if (total_bytes > 6LL * 1024 * 1024 * 1024) continue;
+        if (total_bytes > mem_limit) continue;
 
         AllocT* A = nullptr;
         AllocT* B = nullptr;
@@ -297,12 +301,15 @@ public:
             }
             case Precision::INT8: {
                 // INT8 inputs, INT32 output — need separate allocation
-                std::vector<int> sizes_i8 = {1024, 2048, 4096, 8192, 16384};
+                std::vector<int> sizes_i8 = {1024, 2048, 4096, 8192, 16384, 32768};
                 sr = {0, 1e9f, 0.0};
+                size_t free_i8 = 0, total_i8 = 0;
+                hipMemGetInfo(&free_i8, &total_i8);
+                int64_t mem_limit_i8 = (int64_t)(free_i8 * 0.75);
                 for (int M : sizes_i8) {
                     int64_t ab_bytes = (int64_t)M * M * sizeof(int8_t);
                     int64_t c_bytes  = (int64_t)M * M * sizeof(int32_t);
-                    if (ab_bytes * 2 + c_bytes > 6LL * 1024 * 1024 * 1024) continue;
+                    if (ab_bytes * 2 + c_bytes > mem_limit_i8) continue;
 
                     int8_t *A = nullptr, *B = nullptr;
                     int32_t *C = nullptr;

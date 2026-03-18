@@ -7,15 +7,14 @@
 namespace floptic {
 
 // ============================================================================
-// Per-architecture ops/CU/clock tables for AMD CDNA GPUs
+// Per-architecture FLOP/CU/clock tables for AMD CDNA GPUs
 //
-// AMD CDNA architecture uses Compute Units (CUs), each with:
-//   - Vector ALUs: 64 lanes (SIMD32 × 2, or 4×SIMD16), process a 64-wide wavefront
-//   - Matrix cores (MFMA): variable throughput per generation
+// All rates are in FLOP/CU/clock (already counting FMA as 2 FLOP).
+// Source: AMD GPUOpen "AMD matrix cores" lab note, AMD datasheets.
+//   https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 //
-// FP64 vector: 64 FMA/CU/clock on CDNA (full rate, unlike consumer GPUs)
-// FP32 vector: 64 FMA/CU/clock on CDNA
-// Matrix core rates vary by generation (CDNA1, CDNA2, CDNA3)
+// CRITICAL: These values should NOT be multiplied by 2 again when computing
+// peak GFLOP/s. Formula: peak = CUs × clock_GHz × flops_per_cu_per_clock.
 // ============================================================================
 
 // GFX ID to CDNA generation mapping:
@@ -32,100 +31,84 @@ static int gfx_to_cdna_gen(const std::string& gfx) {
     return 0;
 }
 
-// FP64 vector FMA/CU/clock (CDNA has full-rate FP64)
-static double fp64_fma_per_cu_per_clock(int cdna_gen) {
-    switch (cdna_gen) {
-        case 1: return 32;   // MI100: 32 FP64 FMA/CU/clk (half-rate FP32)
-        case 2: return 64;   // MI250X: 64 FP64 FMA/CU/clk (full-rate)
-        case 3: return 64;   // MI300X: 64 FP64 FMA/CU/clk (full-rate)
-        default: return 32;
-    }
-}
+// ============================================================================
+// Vector (FMA) unit FLOP/CU/clock — already includes ×2 for FMA
+// ============================================================================
 
-// FP32 vector FMA/CU/clock
-static double fp32_fma_per_cu_per_clock(int cdna_gen) {
+// FP64 vector FLOP/CU/clock
+static double fp64_flops_per_cu_per_clock(int cdna_gen) {
     switch (cdna_gen) {
-        case 1: return 64;   // MI100: 64 FP32 FMA/CU/clk
-        case 2: return 64;   // MI250X: 64 FP32 FMA/CU/clk
-        case 3: return 64;   // MI300X: 64 FP32 FMA/CU/clk
+        case 1: return 64;   // MI100: 32 FP64 FMA/CU/clk × 2 = 64 FLOP
+        case 2: return 128;  // MI250X: full-rate FP64
+        case 3: return 128;  // MI300X: full-rate FP64
         default: return 64;
     }
 }
 
-// FP16 vector FMA/CU/clock (packed, 2× FP32 rate)
-static double fp16_fma_per_cu_per_clock(int cdna_gen) {
+// FP32 vector FLOP/CU/clock
+static double fp32_flops_per_cu_per_clock(int cdna_gen) {
     switch (cdna_gen) {
-        case 1: return 256;  // MI100: 4× FP32 rate via packed math
-        case 2: return 256;  // MI250X: 4× FP32 (packed FP16 ops)
-        case 3: return 256;  // MI300X: 4× FP32
+        case 1: return 128;  // MI100: 64 FP32 FMA/CU/clk × 2 = 128 FLOP
+        case 2: return 128;  // MI250X
+        case 3: return 128;  // MI300X
         default: return 128;
     }
 }
 
-// BF16 vector FMA/CU/clock
-static double bf16_fma_per_cu_per_clock(int cdna_gen) {
-    switch (cdna_gen) {
-        case 1: return 256;  // MI100: same as FP16
-        case 2: return 256;  // MI250X: same as FP16
-        case 3: return 256;  // MI300X: same as FP16
-        default: return 0;
-    }
-}
-
 // ============================================================================
-// Matrix core (MFMA) rates per CU per clock
-// These are the FMA operations issued by the matrix core unit per cycle.
+// Matrix core (MFMA) FLOP/CU/clock — already includes ×2 for FMA
+// Source: AMD GPUOpen table "Flops/Clock/CU"
 // ============================================================================
 
-// FP64 matrix FMA/CU/clock
-static double mfma_fp64_fma_per_cu_per_clock(int cdna_gen) {
+// FP64 matrix FLOP/CU/clock
+static double mfma_fp64_flops_per_cu_per_clock(int cdna_gen) {
     switch (cdna_gen) {
-        case 1: return 64;   // MI100: 2× vector rate
-        case 2: return 128;  // MI250X: 2× vector rate (full MFMA FP64)
-        case 3: return 128;  // MI300X: same as CDNA2 per CU
+        case 1: return 0;    // MI100: NO FP64 matrix cores!
+        case 2: return 256;  // MI250X: FP64 MFMA supported
+        case 3: return 256;  // MI300X: same per CU as CDNA2
         default: return 0;
     }
 }
 
-// FP32 matrix FMA/CU/clock
-static double mfma_fp32_fma_per_cu_per_clock(int cdna_gen) {
+// FP32 matrix FLOP/CU/clock
+static double mfma_fp32_flops_per_cu_per_clock(int cdna_gen) {
     switch (cdna_gen) {
-        case 1: return 128;  // MI100: 2× vector rate
-        case 2: return 128;  // MI250X: 2× vector
-        case 3: return 128;  // MI300X: same per CU
+        case 1: return 256;  // MI100
+        case 2: return 256;  // MI250X
+        case 3: return 256;  // MI300X
         default: return 0;
     }
 }
 
-// FP16 matrix FMA/CU/clock
-static double mfma_fp16_fma_per_cu_per_clock(int cdna_gen) {
+// FP16 matrix FLOP/CU/clock
+static double mfma_fp16_flops_per_cu_per_clock(int cdna_gen) {
     switch (cdna_gen) {
-        case 1: return 512;  // MI100
-        case 2: return 512;  // MI250X
-        case 3: return 1024; // MI300X: 2× CDNA2 per CU
+        case 1: return 1024; // MI100
+        case 2: return 1024; // MI250X
+        case 3: return 2048; // MI300X: 2× CDNA2 per CU
         default: return 0;
     }
 }
 
-// BF16 matrix FMA/CU/clock
-static double mfma_bf16_fma_per_cu_per_clock(int cdna_gen) {
+// BF16 matrix FLOP/CU/clock
+static double mfma_bf16_flops_per_cu_per_clock(int cdna_gen) {
     switch (cdna_gen) {
-        case 1: return 512;  // MI100
-        case 2: return 512;  // MI250X
-        case 3: return 1024; // MI300X: 2× CDNA2
+        case 1: return 512;  // MI100: HALF the rate of FP16!
+        case 2: return 1024; // MI250X: same as FP16
+        case 3: return 2048; // MI300X: same as FP16
         default: return 0;
     }
 }
 
-// TF32 matrix FMA/CU/clock (CDNA3 only)
-static double mfma_tf32_fma_per_cu_per_clock(int cdna_gen) {
+// TF32 matrix FLOP/CU/clock (CDNA3 only)
+static double mfma_tf32_flops_per_cu_per_clock(int cdna_gen) {
     switch (cdna_gen) {
-        case 3: return 512;  // MI300X: new in CDNA3
+        case 3: return 1024; // MI300X: new in CDNA3
         default: return 0;   // Not available on CDNA1/CDNA2
     }
 }
 
-// INT8 matrix ops/CU/clock
+// INT8 matrix OPS/CU/clock
 static double mfma_int8_ops_per_cu_per_clock(int cdna_gen) {
     switch (cdna_gen) {
         case 1: return 1024; // MI100
@@ -135,10 +118,10 @@ static double mfma_int8_ops_per_cu_per_clock(int cdna_gen) {
     }
 }
 
-// FP8 matrix FMA/CU/clock (CDNA3 only)
-static double mfma_fp8_fma_per_cu_per_clock(int cdna_gen) {
+// FP8 matrix FLOP/CU/clock (CDNA3 only)
+static double mfma_fp8_flops_per_cu_per_clock(int cdna_gen) {
     switch (cdna_gen) {
-        case 3: return 2048; // MI300X: same as INT8
+        case 3: return 4096; // MI300X
         default: return 0;   // Not available before CDNA3
     }
 }
@@ -208,49 +191,44 @@ std::vector<DeviceInfo> discover_hip_devices() {
         }
 
         // --- Theoretical peaks ---
+        // All rates are already FLOP/CU/clock (FMA counted as 2 FLOP)
+        // Peak GFLOP/s = CUs × clock_GHz × flops_per_cu_per_clock
+        // NO extra ×2 — it's already in the rate tables!
         double clock_ghz = dev.boost_clock_mhz / 1000.0;
         int cus = dev.compute_units;
 
-        // Vector (CUDA-core equivalent) peaks
-        dev.theoretical_peak_gflops["FP64"] = cus * clock_ghz * fp64_fma_per_cu_per_clock(cdna_gen) * 2.0;
-        dev.theoretical_peak_gflops["FP32"] = cus * clock_ghz * fp32_fma_per_cu_per_clock(cdna_gen) * 2.0;
+        // Vector (FMA unit) peaks
+        dev.theoretical_peak_gflops["FP64"] = cus * clock_ghz * fp64_flops_per_cu_per_clock(cdna_gen);
+        dev.theoretical_peak_gflops["FP32"] = cus * clock_ghz * fp32_flops_per_cu_per_clock(cdna_gen);
 
-        double fp16_rate = fp16_fma_per_cu_per_clock(cdna_gen);
-        if (fp16_rate > 0)
-            dev.theoretical_peak_gflops["FP16"] = cus * clock_ghz * fp16_rate * 2.0;
-
-        double bf16_rate = bf16_fma_per_cu_per_clock(cdna_gen);
-        if (bf16_rate > 0)
-            dev.theoretical_peak_gflops["BF16"] = cus * clock_ghz * bf16_rate * 2.0;
-
-        // Matrix core (MFMA) peaks
-        double mfma_fp64 = mfma_fp64_fma_per_cu_per_clock(cdna_gen);
+        // Matrix core (MFMA) peaks — only add entries that exist for this arch
+        double mfma_fp64 = mfma_fp64_flops_per_cu_per_clock(cdna_gen);
         if (mfma_fp64 > 0)
-            dev.theoretical_peak_gflops["FP64_MFMA"] = cus * clock_ghz * mfma_fp64 * 2.0;
+            dev.theoretical_peak_gflops["FP64_MFMA"] = cus * clock_ghz * mfma_fp64;
 
-        double mfma_fp32 = mfma_fp32_fma_per_cu_per_clock(cdna_gen);
+        double mfma_fp32 = mfma_fp32_flops_per_cu_per_clock(cdna_gen);
         if (mfma_fp32 > 0)
-            dev.theoretical_peak_gflops["FP32_MFMA"] = cus * clock_ghz * mfma_fp32 * 2.0;
+            dev.theoretical_peak_gflops["FP32_MFMA"] = cus * clock_ghz * mfma_fp32;
 
-        double mfma_fp16 = mfma_fp16_fma_per_cu_per_clock(cdna_gen);
+        double mfma_fp16 = mfma_fp16_flops_per_cu_per_clock(cdna_gen);
         if (mfma_fp16 > 0)
-            dev.theoretical_peak_gflops["FP16_MFMA"] = cus * clock_ghz * mfma_fp16 * 2.0;
+            dev.theoretical_peak_gflops["FP16_MFMA"] = cus * clock_ghz * mfma_fp16;
 
-        double mfma_bf16 = mfma_bf16_fma_per_cu_per_clock(cdna_gen);
+        double mfma_bf16 = mfma_bf16_flops_per_cu_per_clock(cdna_gen);
         if (mfma_bf16 > 0)
-            dev.theoretical_peak_gflops["BF16_MFMA"] = cus * clock_ghz * mfma_bf16 * 2.0;
+            dev.theoretical_peak_gflops["BF16_MFMA"] = cus * clock_ghz * mfma_bf16;
 
-        double mfma_tf32 = mfma_tf32_fma_per_cu_per_clock(cdna_gen);
+        double mfma_tf32 = mfma_tf32_flops_per_cu_per_clock(cdna_gen);
         if (mfma_tf32 > 0)
-            dev.theoretical_peak_gflops["TF32_MFMA"] = cus * clock_ghz * mfma_tf32 * 2.0;
+            dev.theoretical_peak_gflops["TF32_MFMA"] = cus * clock_ghz * mfma_tf32;
 
         double mfma_int8 = mfma_int8_ops_per_cu_per_clock(cdna_gen);
         if (mfma_int8 > 0)
-            dev.theoretical_peak_gflops["INT8_MFMA"] = cus * clock_ghz * mfma_int8 * 2.0;
+            dev.theoretical_peak_gflops["INT8_MFMA"] = cus * clock_ghz * mfma_int8;
 
-        double mfma_fp8 = mfma_fp8_fma_per_cu_per_clock(cdna_gen);
+        double mfma_fp8 = mfma_fp8_flops_per_cu_per_clock(cdna_gen);
         if (mfma_fp8 > 0)
-            dev.theoretical_peak_gflops["FP8_MFMA"] = cus * clock_ghz * mfma_fp8 * 2.0;
+            dev.theoretical_peak_gflops["FP8_MFMA"] = cus * clock_ghz * mfma_fp8;
 
         // Print summary
         std::cerr << "  HIP " << dev.id << " (" << dev.name << "):" << std::endl;

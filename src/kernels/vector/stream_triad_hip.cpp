@@ -143,6 +143,9 @@ public:
             result.median_time_ms = median_ms;
             result.min_time_ms = times.front();
             result.max_time_ms = times.back();
+            auto bw_it = device.theoretical_peak_gflops.find("HBM_BW");
+            if (bw_it != device.theoretical_peak_gflops.end() && bw_it->second > 0)
+                result.peak_percent = (gb_per_s / bw_it->second) * 100.0;
         } else {
             float *a, *b, *c;
             hipMalloc(&a, N * sizeof(float));
@@ -172,6 +175,9 @@ public:
             result.median_time_ms = median_ms;
             result.min_time_ms = times.front();
             result.max_time_ms = times.back();
+            auto bw_it = device.theoretical_peak_gflops.find("HBM_BW");
+            if (bw_it != device.theoretical_peak_gflops.end() && bw_it->second > 0)
+                result.peak_percent = (gb_per_s / bw_it->second) * 100.0;
         }
 
         return result;
@@ -241,6 +247,9 @@ public:
         result.median_time_ms = median_ms;
         result.min_time_ms = times.front();
         result.max_time_ms = times.back();
+        auto bw_it = device.theoretical_peak_gflops.find("HBM_BW");
+        if (bw_it != device.theoretical_peak_gflops.end() && bw_it->second > 0)
+            result.peak_percent = (gb_per_s / bw_it->second) * 100.0;
 
         return result;
     }

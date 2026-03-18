@@ -200,6 +200,19 @@ std::vector<DeviceInfo> discover_hip_devices() {
         // Vector (FMA unit) peaks
         dev.theoretical_peak_gflops["FP64"] = cus * clock_ghz * fp64_flops_per_cu_per_clock(cdna_gen);
         dev.theoretical_peak_gflops["FP32"] = cus * clock_ghz * fp32_flops_per_cu_per_clock(cdna_gen);
+        // FP16/BF16 vector: packed operations, 2× FP32 rate on all CDNA gens
+        dev.theoretical_peak_gflops["FP16"] = dev.theoretical_peak_gflops["FP32"] * 2.0;
+        dev.theoretical_peak_gflops["BF16"] = dev.theoretical_peak_gflops["FP32"] * 2.0;
+
+        // HBM bandwidth peak (from memory clock and bus width)
+        // props.memoryClockRate is in kHz, props.memoryBusWidth in bits
+        // Bandwidth = clock × busWidth / 8 × 2 (DDR)
+        double mem_clock_ghz = (props.memoryClockRate / 1e6);  // kHz to GHz
+        double mem_bus_bytes = props.memoryBusWidth / 8.0;
+        double hbm_bw_gbs = mem_clock_ghz * mem_bus_bytes * 2.0;  // ×2 for DDR
+        if (hbm_bw_gbs > 0) {
+            dev.theoretical_peak_gflops["HBM_BW"] = hbm_bw_gbs;  // GB/s stored in same map
+        }
 
         // Matrix core (MFMA) peaks — only add entries that exist for this arch
         double mfma_fp64 = mfma_fp64_flops_per_cu_per_clock(cdna_gen);

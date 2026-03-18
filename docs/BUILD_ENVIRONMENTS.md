@@ -176,8 +176,7 @@ LD_LIBRARY_PATH=/soft/compilers/gcc/13.3.0/x86_64-suse-linux/lib64:$LD_LIBRARY_P
 **Architecture**: CDNA3 (gfx942)
 
 ```bash
-# TODO: confirm modules
-module load rocm cmake gcc
+module load cmake/3.28.3 rocm/7.0.2 gcc/13.3.0
 
 cmake -B build_gpu_mi300x \
     -DCMAKE_CXX_COMPILER=hipcc \
@@ -185,13 +184,22 @@ cmake -B build_gpu_mi300x \
     -DFLOPTIC_ENABLE_HIP=ON \
     -DGPU_TARGETS=gfx942
 make -C build_gpu_mi300x -j
+
+# No LD_LIBRARY_PATH workaround needed — gcc/13.3.0 loaded directly
+./build_gpu_mi300x/floptic --device=hip:0 --precision=all \
+    --output=results/jlse_gpu_mi300x.json \
+    --output-md=results/jlse_gpu_mi300x.md
 ```
 
 **Notes**:
-- CDNA3: full-rate FP64, TF32 support, FP8 support
-- Matrix cores: FP64, FP32, TF32, FP16, BF16, INT8, FP8
-- Specs: 163.4 TF/s FP64 matrix, 1307.4 TF/s FP16 matrix, 2614.9 TF/s FP8 matrix
-- 5.3 TB/s HBM3 bandwidth
+- Node: `amdgpu00`, AMD EPYC 9654 96-Core host
+- ROCm 7.0.2, AMD clang 20.0 — no ABI workaround needed (gcc/13.3.0 loaded directly)
+- CDNA3: 8 XCDs × 38 CUs = 304 CUs, 2100 MHz
+- Full-rate FP64 MFMA (256 FLOP/CU/clk)
+- 2× FP16/BF16/INT8 MFMA rates vs CDNA2 (2048 FLOP/CU/clk)
+- New: TF32 MFMA (1024 FLOP/CU/clk), FP8 MFMA (4096 FLOP/CU/clk)
+- HBM3: 192 GB, 8192-bit bus, **5.3 TB/s** peak bandwidth
+- FP8/TF32 GEMM would require hipBLASLt (not yet implemented; only rocBLAS used)
 
 ### MI300A — CDNA3 APU (gfx942)
 

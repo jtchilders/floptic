@@ -204,12 +204,17 @@ std::vector<DeviceInfo> discover_hip_devices() {
         dev.theoretical_peak_gflops["FP16"] = dev.theoretical_peak_gflops["FP32"] * 2.0;
         dev.theoretical_peak_gflops["BF16"] = dev.theoretical_peak_gflops["FP32"] * 2.0;
 
-        // HBM bandwidth peak (from memory clock and bus width)
-        // props.memoryClockRate is in kHz, props.memoryBusWidth in bits
-        // Bandwidth = clock × busWidth / 8 × 2 (DDR)
+        // HBM bandwidth peak
+        // hipDeviceProp reports memoryClockRate (kHz) and memoryBusWidth (bits)
+        // but the effective multiplier varies by HBM generation:
+        //   HBM2:  ×2 (DDR)
+        //   HBM2e: ×2 (DDR)
+        //   HBM3:  ×4 (QDR — quad data rate)
+        // Use per-generation multipliers for correct bandwidth.
         double mem_clock_ghz = (props.memoryClockRate / 1e6);  // kHz to GHz
         double mem_bus_bytes = props.memoryBusWidth / 8.0;
-        double hbm_bw_gbs = mem_clock_ghz * mem_bus_bytes * 2.0;  // ×2 for DDR
+        int hbm_multiplier = (cdna_gen >= 3) ? 4 : 2;  // CDNA3 (MI300) uses HBM3
+        double hbm_bw_gbs = mem_clock_ghz * mem_bus_bytes * hbm_multiplier;
         if (hbm_bw_gbs > 0) {
             dev.theoretical_peak_gflops["HBM_BW"] = hbm_bw_gbs;  // GB/s stored in same map
         }

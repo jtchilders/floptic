@@ -105,7 +105,9 @@ make -C build_gpu_a100 -j
 **Architecture**: CDNA1 (gfx908)
 
 ```bash
-# Build: rocm/6.3.2 + gcc/12.2.0 (rocm/6.4.3 has lld crash with gcc/13.3.0)
+# Build: rocm/6.3.2 + gcc/12.2.0
+# rocm/6.4.3 has lld linker crash with gcc/13.3.0
+# gcc/12.2.0 lacks GLIBCXX_3.4.32 needed by ROCm at runtime
 module load rocm/6.3.2 cmake/3.28.3 gcc/12.2.0
 
 cmake -B build_gpu_mi100 \
@@ -115,18 +117,24 @@ cmake -B build_gpu_mi100 \
     -DGPU_TARGETS=gfx908
 make -C build_gpu_mi100 -j
 
-# Run: swap to gcc/13.3.0 (ROCm libs need GLIBCXX_3.4.32)
-module swap gcc/12.2.0 gcc/13.3.0
-./build_gpu_mi100/floptic --device=hip:0 --precision=all
+# Run: prepend gcc/13.3.0 libstdc++ (provides GLIBCXX_3.4.32)
+LD_LIBRARY_PATH=/soft/compilers/gcc/13.3.0/x86_64-suse-linux/lib64:$LD_LIBRARY_PATH \
+    ./build_gpu_mi100/floptic --device=hip:0 --precision=all \
+    --output=results/jlse_gpu_mi100.json \
+    --output-md=results/jlse_gpu_mi100.md
 ```
 
 **Notes**:
-- Node: `amdgpu02`/`amdgpu03`, 4× MI100 (gfx908)
-- ROCm 6.3.2, HIP 6.3, AMD clang 18.0
-- Build with gcc/12.2.0, run with gcc/13.3.0 (ABI mismatch workaround)
-- CDNA1: FP64 = half-rate FP32 (32 FMA/CU/clk vs 64)
-- Matrix cores support FP64, FP32, FP16, BF16, INT8
+- Node: `amdgpu02`/`amdgpu03`, 4× MI100 (gfx908), AMD EPYC 7543 host
+- ROCm 6.3.2 (HIP 6.3.42134), AMD clang 18.0
+- hipcc: `/soft/compilers/rocm/rocm-6.3.2/bin/hipcc`
+- Build with `gcc/12.2.0`, run with `gcc/13.3.0` libstdc++ prepended
+  (ROCm runtime libs need GLIBCXX_3.4.32, only in gcc ≥ 13)
+- CDNA1: NO FP64 matrix cores — FP64 GEMM uses vector ALU only
+- Matrix cores (MFMA): FP32, FP16, BF16, INT8
+- BF16 MFMA is half the rate of FP16 on MI100 (512 vs 1024 FLOP/CU/clk)
 - No TF32, no FP8
+- Available ROCm versions: 6.3.2, 6.4.1, 6.4.3, 7.0.2
 
 ### MI250X — CDNA2 (gfx90a)
 

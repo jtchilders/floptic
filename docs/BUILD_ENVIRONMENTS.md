@@ -144,8 +144,7 @@ LD_LIBRARY_PATH=/soft/compilers/gcc/13.3.0/x86_64-suse-linux/lib64:$LD_LIBRARY_P
 **Architecture**: CDNA2 (gfx90a)
 
 ```bash
-# TODO: confirm modules
-module load rocm cmake gcc
+module load rocm/6.3.2 cmake/3.28.3 gcc/12.2.0
 
 cmake -B build_gpu_mi250 \
     -DCMAKE_CXX_COMPILER=hipcc \
@@ -153,12 +152,21 @@ cmake -B build_gpu_mi250 \
     -DFLOPTIC_ENABLE_HIP=ON \
     -DGPU_TARGETS=gfx90a
 make -C build_gpu_mi250 -j
+
+# Run (prepend gcc/13.3.0 libstdc++ for GLIBCXX_3.4.32)
+LD_LIBRARY_PATH=/soft/compilers/gcc/13.3.0/x86_64-suse-linux/lib64:$LD_LIBRARY_PATH \
+    ./build_gpu_mi250/floptic --device=hip:0 --precision=all \
+    --output=results/jlse_gpu_mi250.json \
+    --output-md=results/jlse_gpu_mi250.md
 ```
 
 **Notes**:
+- Node: `amdgpu04`, AMD EPYC 7713 64-Core host
 - 2 GCDs per card — each is a separate HIP device (hip:0, hip:1)
-- Full-rate FP64 (64 FMA/CU/clk)
-- Matrix cores: FP64, FP32, FP16, BF16, INT8
+- 104 CUs per GCD, 1700 MHz
+- Full-rate FP64 vector (128 FLOP/CU/clk) + FP64 MFMA (256 FLOP/CU/clk)
+- Packed FP32 (v_pk_fma_f32): 256 FLOP/CU/clk vector
+- Matrix cores: FP64, FP32, FP16, BF16, INT8 (all equal MFMA rate for FP16/BF16/INT8)
 - No TF32, no FP8
 
 ### MI300X — CDNA3 (gfx942)

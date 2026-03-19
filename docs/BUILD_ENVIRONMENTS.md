@@ -206,13 +206,13 @@ make -C build_gpu_mi300x -j
 
 ### MI300A — CDNA3 APU (gfx942)
 
-**Node**: `gpu_amd_mi300a`
-**GPU**: AMD Instinct MI300A (APU), 228 CUs, 2100 MHz, 128 GB unified HBM3
+**Node**: `amdgpu06`
+**GPU**: 4× AMD Instinct MI300A (APU), 228 CUs, 2100 MHz, 94.2 GB visible memory
+**CPU**: AMD Instinct MI300A Accelerator (96 physical / 192 logical cores, AVX-512, 3699 MHz)
 **Architecture**: CDNA3 (gfx942)
 
 ```bash
-# TODO: confirm modules
-module load rocm cmake gcc
+module load cmake/3.28.3 rocm/7.0.2 gcc/13.3.0
 
 cmake -B build_gpu_mi300a \
     -DCMAKE_CXX_COMPILER=hipcc \
@@ -220,12 +220,22 @@ cmake -B build_gpu_mi300a \
     -DFLOPTIC_ENABLE_HIP=ON \
     -DGPU_TARGETS=gfx942
 make -C build_gpu_mi300a -j
+
+./build_gpu_mi300a/floptic --device=hip:0 --precision=all \
+    --output=results/jlse_gpu_mi300a.json \
+    --output-md=results/jlse_gpu_mi300a.md
 ```
 
 **Notes**:
 - APU: shared CPU + GPU die with unified memory
 - Same CDNA3 ISA as MI300X but fewer CUs (228 vs 304)
+- Same modules/build as MI300X — no LD_LIBRARY_PATH workaround needed
 - Specs: 122.6 TF/s FP64 matrix, 980.6 TF/s FP16 matrix
+- **Known issue**: TF32 via hipBLASLt runs at only 40.3 TF/s (8.2% of peak) — falling
+  back to non-MFMA path. MI300X gets 416 TF/s (63.7%) with identical build.
+- **Known issue**: HBM bandwidth peak reported as 5.3 TB/s (same as MI300X) but
+  MI300A has fewer HBM stacks. Measured 3.9 TB/s is likely close to true peak.
+- FP8 GEMM: same "No valid solution" as MI300X (ROCm 7.0.2 limitation)
 
 ---
 

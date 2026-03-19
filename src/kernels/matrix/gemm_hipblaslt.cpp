@@ -201,7 +201,7 @@ static SweepResult sweep_hipblaslt(hipblasLtHandle_t handle,
                                              A, B, C, D, workspace, workspace_size,
                                              d_a_scale, d_b_scale, d_d_scale);
         if (probe_ms <= 0) {
-            HIP_CHECK(hipFree(A); HIP_CHECK(hipFree(B); HIP_CHECK(hipFree(C); HIP_CHECK(hipFree(D));
+            HIP_CHECK(hipFree(A)); HIP_CHECK(hipFree(B)); HIP_CHECK(hipFree(C)); HIP_CHECK(hipFree(D));
             continue;
         }
 
@@ -264,7 +264,7 @@ static SweepResult sweep_hipblaslt(hipblasLtHandle_t handle,
             hipblasLtMatrixLayoutDestroy(mD);
         }
 
-        HIP_CHECK(hipFree(A); HIP_CHECK(hipFree(B); HIP_CHECK(hipFree(C); HIP_CHECK(hipFree(D));
+        HIP_CHECK(hipFree(A)); HIP_CHECK(hipFree(B)); HIP_CHECK(hipFree(C)); HIP_CHECK(hipFree(D));
 
         if (times.empty()) continue;
         std::sort(times.begin(), times.end());

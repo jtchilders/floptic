@@ -199,7 +199,10 @@ make -C build_gpu_mi300x -j
 - 2× FP16/BF16/INT8 MFMA rates vs CDNA2 (2048 FLOP/CU/clk)
 - New: TF32 MFMA (1024 FLOP/CU/clk), FP8 MFMA (4096 FLOP/CU/clk)
 - HBM3: 192 GB, 8192-bit bus, **5.3 TB/s** peak bandwidth
-- FP8/TF32 GEMM would require hipBLASLt (not yet implemented; only rocBLAS used)
+- TF32 GEMM via hipBLASLt: **working** (414 TF/s, 63.4% of 653.7 TF/s peak)
+- FP8 GEMM via hipBLASLt: **not working** on ROCm 7.0.2 — no valid solutions found
+  for FP8→BF16 or FP8→FP16 combos; FP8→FP8 finds solutions but runs at ~70 TF/s
+  (not using MFMA). Likely needs newer hipBLASLt version or different ROCm.
 
 ### MI300A — CDNA3 APU (gfx942)
 

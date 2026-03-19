@@ -34,6 +34,7 @@ namespace floptic {
         extern void stream_triad_hip_link();
         extern void stream_copy_hip_link();
         extern void gemm_rocblas_link();
+        extern void gemm_hipblaslt_link();
 #endif
     }
     static void force_link_all() {
@@ -59,6 +60,7 @@ namespace floptic {
         force_link::stream_triad_hip_link();
         force_link::stream_copy_hip_link();
         force_link::gemm_rocblas_link();
+        force_link::gemm_hipblaslt_link();
 #endif
     }
 }

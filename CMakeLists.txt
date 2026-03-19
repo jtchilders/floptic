@@ -105,6 +105,7 @@ if(FLOPTIC_HAS_HIP)
         src/kernels/vector/vector_axpy_hip.cpp
         src/kernels/vector/stream_triad_hip.cpp
         src/kernels/matrix/gemm_rocblas.cpp
+        src/kernels/matrix/gemm_hipblaslt.cpp
     )
     target_include_directories(floptic_hip PUBLIC include)
     target_link_libraries(floptic_hip PUBLIC nlohmann_json::nlohmann_json)
@@ -117,6 +118,22 @@ if(FLOPTIC_HAS_HIP)
         message(STATUS "Floptic: rocBLAS found for GEMM benchmarks")
     else()
         message(WARNING "Floptic: rocBLAS not found — GEMM benchmarks will fail at runtime")
+    endif()
+
+    # Link hipBLASLt (optional — for TF32, FP8 GEMM)
+    find_library(HIPBLASLT_LIBRARY hipblaslt HINTS $ENV{ROCM_PATH}/lib /opt/rocm/lib)
+    if(HIPBLASLT_LIBRARY)
+        target_link_libraries(floptic_hip PUBLIC ${HIPBLASLT_LIBRARY})
+        target_compile_definitions(floptic_hip PUBLIC FLOPTIC_HAS_HIPBLASLT)
+        message(STATUS "Floptic: hipBLASLt found — TF32, FP8 GEMM enabled")
+        # Find hipBLASLt headers
+        find_path(HIPBLASLT_INCLUDE_DIR hipblaslt/hipblaslt.h
+            HINTS $ENV{ROCM_PATH}/include /opt/rocm/include)
+        if(HIPBLASLT_INCLUDE_DIR)
+            target_include_directories(floptic_hip PUBLIC ${HIPBLASLT_INCLUDE_DIR})
+        endif()
+    else()
+        message(WARNING "Floptic: hipBLASLt not found — TF32/FP8 GEMM kernels disabled")
     endif()
 
     # Find HIP include directories

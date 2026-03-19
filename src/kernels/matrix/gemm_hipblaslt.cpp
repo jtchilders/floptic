@@ -17,6 +17,9 @@
 #include <iostream>
 #include <cstring>
 
+// Suppress nodiscard warnings from HIP runtime calls
+#define HIP_CHECK(call) (void)(call)
+
 namespace floptic {
 
 // ============================================================================
@@ -104,26 +107,26 @@ static float run_hipblaslt_gemm(hipblasLtHandle_t handle,
         // Try all returned algorithms, pick fastest
         for (int ai = 0; ai < returnedAlgoCount; ai++) {
             hipEvent_t start, stop;
-            hipEventCreate(&start);
-            hipEventCreate(&stop);
+            HIP_CHECK(hipEventCreate(&start));
+            HIP_CHECK(hipEventCreate(&stop));
 
             // Warmup
             hipblasLtMatmul(handle, matmul, &alpha, A, matA, B, matB, &beta, C, matC,
                             D, matD, &heuristicResults[ai].algo, workspace,
                             heuristicResults[ai].workspaceSize, 0);
-            hipDeviceSynchronize();
+            HIP_CHECK(hipDeviceSynchronize());
 
-            hipEventRecord(start);
+            HIP_CHECK(hipEventRecord(start));
             hipblasLtMatmul(handle, matmul, &alpha, A, matA, B, matB, &beta, C, matC,
                             D, matD, &heuristicResults[ai].algo, workspace,
                             heuristicResults[ai].workspaceSize, 0);
-            hipEventRecord(stop);
-            hipEventSynchronize(stop);
+            HIP_CHECK(hipEventRecord(stop));
+            HIP_CHECK(hipEventSynchronize(stop));
 
             float ms = 0.0f;
-            hipEventElapsedTime(&ms, start, stop);
-            hipEventDestroy(start);
-            hipEventDestroy(stop);
+            HIP_CHECK(hipEventElapsedTime(&ms, start, stop));
+            HIP_CHECK(hipEventDestroy(start));
+            HIP_CHECK(hipEventDestroy(stop));
 
             if (ms > 0 && ms < best_ms)
                 best_ms = ms;
@@ -157,24 +160,24 @@ static SweepResult sweep_hipblaslt(hipblasLtHandle_t handle,
     SweepResult best = {0, 1e9f, 0.0};
 
     size_t free_mem = 0, total_mem = 0;
-    hipMemGetInfo(&free_mem, &total_mem);
+    HIP_CHECK(hipMemGetInfo(&free_mem, &total_mem));
     int64_t mem_limit = (int64_t)(free_mem * 0.70);  // 70% — need workspace too
 
     // Allocate workspace (32 MB)
     size_t workspace_size = 32 * 1024 * 1024;
     void* workspace = nullptr;
-    hipMalloc(&workspace, workspace_size);
+    HIP_CHECK(hipMalloc(&workspace, workspace_size));
 
     // Scale pointers for FP8
     void *d_a_scale = nullptr, *d_b_scale = nullptr, *d_d_scale = nullptr;
     if (cfg.needs_scale_ptrs) {
         float one = 1.0f;
-        hipMalloc(&d_a_scale, sizeof(float));
-        hipMalloc(&d_b_scale, sizeof(float));
-        hipMalloc(&d_d_scale, sizeof(float));
-        hipMemcpy(d_a_scale, &one, sizeof(float), hipMemcpyHostToDevice);
-        hipMemcpy(d_b_scale, &one, sizeof(float), hipMemcpyHostToDevice);
-        hipMemcpy(d_d_scale, &one, sizeof(float), hipMemcpyHostToDevice);
+        HIP_CHECK(hipMalloc(&d_a_scale, sizeof(float)));
+        HIP_CHECK(hipMalloc(&d_b_scale, sizeof(float)));
+        HIP_CHECK(hipMalloc(&d_d_scale, sizeof(float)));
+        HIP_CHECK(hipMemcpy(d_a_scale, &one, sizeof(float), hipMemcpyHostToDevice));
+        HIP_CHECK(hipMemcpy(d_b_scale, &one, sizeof(float), hipMemcpyHostToDevice));
+        HIP_CHECK(hipMemcpy(d_d_scale, &one, sizeof(float), hipMemcpyHostToDevice));
     }
 
     for (int M : sizes) {
@@ -185,20 +188,20 @@ static SweepResult sweep_hipblaslt(hipblasLtHandle_t handle,
 
         void *A = nullptr, *B = nullptr, *C = nullptr, *D = nullptr;
         if (hipMalloc(&A, ab_bytes) != hipSuccess) continue;
-        hipMalloc(&B, ab_bytes);
-        hipMalloc(&C, cd_bytes);
-        hipMalloc(&D, cd_bytes);
-        hipMemset(A, 0, ab_bytes);
-        hipMemset(B, 0, ab_bytes);
-        hipMemset(C, 0, cd_bytes);
-        hipMemset(D, 0, cd_bytes);
+        HIP_CHECK(hipMalloc(&B, ab_bytes));
+        HIP_CHECK(hipMalloc(&C, cd_bytes));
+        HIP_CHECK(hipMalloc(&D, cd_bytes));
+        HIP_CHECK(hipMemset(A, 0, ab_bytes));
+        HIP_CHECK(hipMemset(B, 0, ab_bytes));
+        HIP_CHECK(hipMemset(C, 0, cd_bytes));
+        HIP_CHECK(hipMemset(D, 0, cd_bytes));
 
         // Find best algo for this size
         float probe_ms = run_hipblaslt_gemm(handle, cfg, M, M, M,
                                              A, B, C, D, workspace, workspace_size,
                                              d_a_scale, d_b_scale, d_d_scale);
         if (probe_ms <= 0) {
-            hipFree(A); hipFree(B); hipFree(C); hipFree(D);
+            HIP_CHECK(hipFree(A); HIP_CHECK(hipFree(B); HIP_CHECK(hipFree(C); HIP_CHECK(hipFree(D));
             continue;
         }
 
@@ -237,20 +240,20 @@ static SweepResult sweep_hipblaslt(hipblasLtHandle_t handle,
             if (count > 0) {
                 float alpha = 1.0f, beta = 0.0f;
                 hipEvent_t start, stop;
-                hipEventCreate(&start);
-                hipEventCreate(&stop);
+                HIP_CHECK(hipEventCreate(&start));
+                HIP_CHECK(hipEventCreate(&stop));
 
-                hipEventRecord(start);
+                HIP_CHECK(hipEventRecord(start));
                 hipblasLtMatmul(handle, mmul, &alpha, A, mA, B, mB, &beta, C, mC,
                                 D, mD, &hr[0].algo, workspace, hr[0].workspaceSize, 0);
-                hipEventRecord(stop);
-                hipEventSynchronize(stop);
+                HIP_CHECK(hipEventRecord(stop));
+                HIP_CHECK(hipEventSynchronize(stop));
 
                 float ms = 0.0f;
-                hipEventElapsedTime(&ms, start, stop);
+                HIP_CHECK(hipEventElapsedTime(&ms, start, stop));
                 if (ms > 0) times.push_back(ms);
-                hipEventDestroy(start);
-                hipEventDestroy(stop);
+                HIP_CHECK(hipEventDestroy(start));
+                HIP_CHECK(hipEventDestroy(stop));
             }
 
             hipblasLtMatmulPreferenceDestroy(prf);
@@ -261,7 +264,7 @@ static SweepResult sweep_hipblaslt(hipblasLtHandle_t handle,
             hipblasLtMatrixLayoutDestroy(mD);
         }
 
-        hipFree(A); hipFree(B); hipFree(C); hipFree(D);
+        HIP_CHECK(hipFree(A); HIP_CHECK(hipFree(B); HIP_CHECK(hipFree(C); HIP_CHECK(hipFree(D));
 
         if (times.empty()) continue;
         std::sort(times.begin(), times.end());
@@ -281,10 +284,10 @@ static SweepResult sweep_hipblaslt(hipblasLtHandle_t handle,
 
     std::cerr << "  Best: M=" << best.best_M << " → " << best.best_gflops << " GFLOP/s" << std::endl;
 
-    hipFree(workspace);
-    if (d_a_scale) hipFree(d_a_scale);
-    if (d_b_scale) hipFree(d_b_scale);
-    if (d_d_scale) hipFree(d_d_scale);
+    HIP_CHECK(hipFree(workspace));
+    if (d_a_scale) HIP_CHECK(hipFree(d_a_scale));
+    if (d_b_scale) HIP_CHECK(hipFree(d_b_scale));
+    if (d_d_scale) HIP_CHECK(hipFree(d_d_scale));
 
     return best;
 }
@@ -312,7 +315,7 @@ public:
     bool is_available(const DeviceInfo& device) const override {
         // hipBLASLt with CDNA3 (gfx942) features
         // TF32 and FP8 require gfx940+
-        return device.architecture.find("gfx94") != std::string::npos;
+        return device.arch.find("gfx94") != std::string::npos;
     }
 
     KernelResult run(const KernelConfig& config,
@@ -322,7 +325,7 @@ public:
         auto pos = device.id.find(':');
         if (pos != std::string::npos)
             dev_idx = std::stoi(device.id.substr(pos + 1));
-        hipSetDevice(dev_idx);
+        HIP_CHECK(hipSetDevice(dev_idx));
 
         hipblasLtHandle_t handle;
         check_hipblaslt(hipblasLtCreate(&handle), "create handle");

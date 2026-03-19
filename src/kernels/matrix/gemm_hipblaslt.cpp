@@ -349,29 +349,30 @@ public:
                 break;
             }
             case Precision::FP8_E4M3: {
-                // FP8 E4M3 FNUZ (MI300X specific)
+                // FP8 E4M3 FNUZ (MI300X/gfx942 specific)
+                // AMD sample: A=FP8, B=FP8, C=FP8, D=FP8, compute=FP32
                 cfg.a_type = HIP_R_8F_E4M3_FNUZ;
                 cfg.b_type = HIP_R_8F_E4M3_FNUZ;
-                cfg.c_type = HIP_R_16F;  // Output in FP16
-                cfg.d_type = HIP_R_16F;
+                cfg.c_type = HIP_R_8F_E4M3_FNUZ;
+                cfg.d_type = HIP_R_8F_E4M3_FNUZ;
                 cfg.compute_type = HIPBLAS_COMPUTE_32F;
                 cfg.scale_type = HIP_R_32F;
                 cfg.elem_bytes = 1;
-                cfg.out_elem_bytes = 2;
+                cfg.out_elem_bytes = 1;
                 cfg.needs_scale_ptrs = true;
                 peak_key = "FP8_MFMA";
                 break;
             }
             case Precision::FP8_E5M2: {
-                // FP8 E5M2 FNUZ (MI300X specific)
+                // FP8 E5M2 FNUZ (MI300X/gfx942 specific)
                 cfg.a_type = HIP_R_8F_E5M2_FNUZ;
                 cfg.b_type = HIP_R_8F_E5M2_FNUZ;
-                cfg.c_type = HIP_R_16F;  // Output in FP16
-                cfg.d_type = HIP_R_16F;
+                cfg.c_type = HIP_R_8F_E5M2_FNUZ;
+                cfg.d_type = HIP_R_8F_E5M2_FNUZ;
                 cfg.compute_type = HIPBLAS_COMPUTE_32F;
                 cfg.scale_type = HIP_R_32F;
                 cfg.elem_bytes = 1;
-                cfg.out_elem_bytes = 2;
+                cfg.out_elem_bytes = 1;
                 cfg.needs_scale_ptrs = true;
                 peak_key = "FP8_MFMA";
                 break;

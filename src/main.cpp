@@ -237,6 +237,12 @@ int main(int argc, char* argv[]) {
                                   << ", peak " << result.peak_percent << "%)"
                                   << std::endl;
 
+                        // Skip zero-result entries (unsupported combos, failed algos)
+                        if (result.gflops <= 0) {
+                            std::cerr << "  (skipped — no valid result)" << std::endl;
+                            continue;
+                        }
+
                         BenchmarkEntry entry;
                         entry.device_id = device.id;
                         entry.kernel_name = kernel->name();

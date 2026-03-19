@@ -233,6 +233,9 @@ static SweepResult sweep_and_measure(rocblas_handle handle,
         double flops = 2.0 * (double)M * M * M;
         double gflops = (flops / (median_ms * 1e-3)) / 1e9;
 
+        std::cerr << "    M=" << M << ": " << gflops << " GFLOP/s"
+                  << " (median " << median_ms << " ms)" << std::endl;
+
         if (gflops > best.best_gflops) {
             best.best_M = M;
             best.best_ms = median_ms;
@@ -240,6 +243,7 @@ static SweepResult sweep_and_measure(rocblas_handle handle,
         }
     }
 
+    std::cerr << "  Best: M=" << best.best_M << " → " << best.best_gflops << " GFLOP/s" << std::endl;
     return best;
 }
 

@@ -113,7 +113,7 @@ static double mfma_int8_ops_per_cu_per_clock(int cdna_gen) {
     switch (cdna_gen) {
         case 1: return 1024; // MI100
         case 2: return 1024; // MI250X
-        case 3: return 2048; // MI300X: 2× CDNA2
+        case 3: return 4096; // MI300X: 4× CDNA2 (same as FP8, per AMD datasheet: 2.6 POPs)
         default: return 0;
     }
 }

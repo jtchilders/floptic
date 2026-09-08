@@ -139,30 +139,33 @@ run_case("empty_combination_fails" 1 "" "no benchmarks were executed"
 
 # 8. Resource safety ceilings: exact ceiling accepted, ceiling+1 rejected.
 #    These are parser-level portability/sanity limits, not device-specific.
+#    The "ceiling accepted" cases use --list (parses + validates args, then
+#    lists kernels and exits without launching a benchmark) rather than
+#    running scalar_fma, because actually executing with --cpu-threads at
+#    its 65536 ceiling would try to spawn that many real OpenMP threads and
+#    can crash/segfault on constrained CI hosts. Parser acceptance alone
+#    (opts.valid == true, exit 0) is what this ceiling boundary is testing;
+#    tests/test_cli_parser.cpp already covers the resulting parsed value.
 run_case("cpu_threads_ceiling_ok" 0 "" ""
-    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
-    --report=stdout --cpu-threads=65536)
+    --list --cpu-threads=65536)
 run_case("cpu_threads_over_ceiling_rejected" 1 "" "out of range"
     --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
     --report=stdout --cpu-threads=65537)
 
 run_case("gpu_blocks_ceiling_ok" 0 "" ""
-    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
-    --report=stdout --gpu-blocks=1048576)
+    --list --gpu-blocks=1048576)
 run_case("gpu_blocks_over_ceiling_rejected" 1 "" "out of range"
     --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
     --report=stdout --gpu-blocks=1048577)
 
 run_case("gpu_tpb_ceiling_ok" 0 "" ""
-    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
-    --report=stdout --gpu-tpb=1024)
+    --list --gpu-tpb=1024)
 run_case("gpu_tpb_over_ceiling_rejected" 1 "" "out of range"
     --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
     --report=stdout --gpu-tpb=1025)
 
 run_case("gpu_bpsm_ceiling_ok" 0 "" ""
-    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
-    --report=stdout --gpu-bpsm=64)
+    --list --gpu-bpsm=64)
 run_case("gpu_bpsm_over_ceiling_rejected" 1 "" "out of range"
     --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
     --report=stdout --gpu-bpsm=65)

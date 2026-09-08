@@ -4,6 +4,7 @@
 #include "floptic/report.hpp"
 #include "floptic/benchmark_status.hpp"
 #include "floptic/typed_metric.hpp"
+#include "floptic/dispatch_normalize.hpp"
 #include <iostream>
 #include <algorithm>
 #include <map>
@@ -304,31 +305,19 @@ int main(int argc, char* argv[]) {
 
                         auto result = kernel->run(config, device, opts.trials);
 
-                        // Normalize legacy gflops/effective_gflops fields into
-                        // a typed metric at the dispatch boundary using an
-                        // explicit mapping by kernel semantics — memory
-                        // kernels are bytes, INT kernels are integer
-                        // operations, other compute kernels are floating
-                        // operations. Kernels that already populate
-                        // result.metric directly are left untouched.
-                        if (result.metric.rate_per_second == 0.0 && result.gflops > 0) {
-                            MetricKind inferred_kind =
-                                infer_metric_kind_for_kernel(kernel->category(), precision);
-                            result.metric = normalize_legacy_metric(
-                                inferred_kind, result.gflops, result.total_flops);
-                        }
-
-                        // A kernel that ran but produced no valid result
-                        // (unsupported combo, failed algorithm search, etc.)
-                        // must be marked explicitly rather than inferred from
-                        // a nonpositive legacy rate. Kernels that already set
-                        // an explicit non-OK status are left as-is; this only
-                        // covers kernels that have not migrated to set status
-                        // themselves and still signal failure via gflops<=0.
-                        if (result.status == BenchmarkStatus::OK && result.gflops <= 0 &&
-                            result.metric.rate_per_second <= 0.0) {
-                            result.status = BenchmarkStatus::FAILED;
-                        }
+                        // Normalize legacy gflops/effective_gflops/
+                        // total_flops/total_bytes fields into a typed
+                        // metric and an authoritative status at the
+                        // dispatch boundary, using the centralized,
+                        // independently-tested mapping in
+                        // dispatch_normalize.hpp. Status is never inferred
+                        // from a nonpositive rate here — KernelResult::
+                        // status defaults to FAILED and normalize_dispatch_
+                        // result only ever promotes that default to OK on
+                        // evidence of a valid measurement; kernels that
+                        // already set an explicit status (OK or otherwise)
+                        // are left untouched.
+                        normalize_dispatch_result(result, kernel->category(), precision);
 
                         std::cerr << "  Result: " << format_metric_rate(result.metric)
                                   << " (status " << benchmark_status_to_string(result.status)

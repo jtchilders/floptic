@@ -140,6 +140,9 @@ public:
             double gb_per_s = (bytes / (median_ms * 1e-3)) / 1e9;
 
             result.gflops = gb_per_s;  // reported as GB/s in the "gflops" field
+            // Explicit transferred-byte count: triad = 2 reads + 1 write =
+            // 3 * N * sizeof(double) bytes.
+            result.total_bytes = static_cast<int64_t>(bytes);
             result.median_time_ms = median_ms;
             result.min_time_ms = times.front();
             result.max_time_ms = times.back();
@@ -172,6 +175,9 @@ public:
             double gb_per_s = (bytes / (median_ms * 1e-3)) / 1e9;
 
             result.gflops = gb_per_s;
+            // Explicit transferred-byte count: triad = 2 reads + 1 write =
+            // 3 * N * sizeof(float) bytes.
+            result.total_bytes = static_cast<int64_t>(bytes);
             result.median_time_ms = median_ms;
             result.min_time_ms = times.front();
             result.max_time_ms = times.back();
@@ -244,6 +250,9 @@ public:
 
         KernelResult result;
         result.gflops = gb_per_s;
+        // Explicit transferred-byte count: copy = 1 read + 1 write =
+        // 2 * N * sizeof(double) bytes.
+        result.total_bytes = static_cast<int64_t>(bytes);
         result.median_time_ms = median_ms;
         result.min_time_ms = times.front();
         result.max_time_ms = times.back();

@@ -89,6 +89,27 @@ inline MetricKind infer_metric_kind_for_kernel(const std::string& category,
     return MetricKind::FLOATING_POINT_OPERATIONS;
 }
 
+// Explicit arithmetic-convention text for the centralized dispatch-boundary
+// mapping, keyed only by the already-inferred metric kind (never by
+// category directly, so it stays consistent with
+// infer_metric_kind_for_kernel). All current scalar/vector/matrix compute
+// kernels measure a fused multiply-add or multiply-accumulate, which this
+// project counts as two operations, not one; transferred-byte (memory)
+// kernels have no arithmetic convention to state.
+inline std::string arithmetic_convention_for_kernel(MetricKind kind) {
+    switch (kind) {
+        case MetricKind::FLOATING_POINT_OPERATIONS:
+            return "Each fused multiply-add (FMA) or multiply-accumulate "
+                   "(MAC) counts as two floating-point operations.";
+        case MetricKind::INTEGER_OPERATIONS:
+            return "Each multiply-accumulate (MAC) counts as two integer "
+                   "operations.";
+        case MetricKind::TRANSFERRED_BYTES:
+            return "";
+    }
+    return "";
+}
+
 // Human-readable rate formatting with SI prefix, e.g. "244.2 TFLOP/s",
 // "500.0 MOP/s", "12.3 GB/s". Driven entirely by the typed metric — never
 // by category-based unit guessing.

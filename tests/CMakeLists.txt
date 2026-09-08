@@ -71,12 +71,29 @@ add_executable(test_report_schema test_report_schema.cpp)
 target_link_libraries(test_report_schema PRIVATE floptic_core)
 add_test(NAME report_schema COMMAND test_report_schema)
 
+# Dispatch-boundary normalization (schema v2): centralized kernel-semantics
+# mapping used at the dispatch boundary (main.cpp) — actual byte counts
+# for memory kernels, authoritative status (never inferred from a
+# nonpositive legacy rate), and arithmetic-convention population. Header-
+# only (floptic/dispatch_normalize.hpp).
+add_executable(test_dispatch_normalize test_dispatch_normalize.cpp)
+target_link_libraries(test_dispatch_normalize PRIVATE floptic_core)
+add_test(NAME dispatch_normalize COMMAND test_dispatch_normalize)
+
 # Executable-level smoke test: drives the real `floptic` binary (not just
 # the parser/test-double unit tests) to cover exit-code and stdout/stderr
 # behavior end-to-end. CPU-only, kept fast via trials=1 / small inner-iters.
 add_test(NAME executable_smoke
     COMMAND ${CMAKE_COMMAND} -DFLOPTIC_EXE=$<TARGET_FILE:floptic>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/test_executable_smoke.cmake)
+
+# Real-executable regression: schema v2 JSON from an actual CPU scalar_fma
+# run has status "ok", a typed FLOP/s metric (kind/unit/rate/operation_count),
+# and a populated arithmetic convention — proving the dispatch_normalize.hpp
+# -> json_writer.cpp path end-to-end, not just direct-construction tests.
+add_test(NAME executable_schema_v2
+    COMMAND ${CMAKE_COMMAND} -DFLOPTIC_EXE=$<TARGET_FILE:floptic>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/test_executable_schema_v2.cmake)
 
 # Regression test for the no-OpenMP serial work-accounting defect: a build
 # that was NOT linked against OpenMP must report/execute --cpu-threads=8 as

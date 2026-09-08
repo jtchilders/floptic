@@ -231,6 +231,10 @@ public:
         result.max_time_ms = stats.max_ms;
         result.total_flops = flops_per_trial;
 
+        // Explicit transferred-byte count for this memory-bandwidth
+        // kernel: 3 arrays (2 reads + 1 write) x n elements x elem_size.
+        result.total_bytes = static_cast<int64_t>(bytes_per_trial);
+
         // Primary metric: bandwidth in GB/s — store in gflops field
         // We repurpose gflops to hold GB/s for memory kernels
         result.gflops = (bytes_per_trial / 1e9) / (stats.median_ms / 1e3);
@@ -309,6 +313,10 @@ public:
         result.min_time_ms = stats.min_ms;
         result.max_time_ms = stats.max_ms;
         result.total_flops = 0;  // no FLOPs in a copy
+
+        // Explicit transferred-byte count: 2 memory ops (read + write)
+        // per element x n elements x 8 bytes.
+        result.total_bytes = static_cast<int64_t>(bytes_per_trial);
 
         // GB/s
         result.gflops = (bytes_per_trial / 1e9) / (stats.median_ms / 1e3);

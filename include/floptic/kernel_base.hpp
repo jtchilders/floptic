@@ -30,7 +30,14 @@ struct KernelResult {
     // Explicit benchmark outcome. Everything below is only meaningful when
     // status == OK; other statuses render explicitly rather than as zero
     // performance (see benchmark_status.hpp).
-    BenchmarkStatus status = BenchmarkStatus::OK;
+    //
+    // Defaults to a non-success state (FAILED) rather than OK. Status must
+    // be authoritative and never inferred from a nonpositive legacy rate —
+    // see floptic/dispatch_normalize.hpp, which is the single place that
+    // promotes an unmigrated kernel's default-FAILED result to OK once it
+    // has produced a valid nonzero legacy/typed measurement. A kernel that
+    // sets its own explicit status (e.g. VALIDATION_FAILED) is left as-is.
+    BenchmarkStatus status = BenchmarkStatus::FAILED;
 
     // Timing
     double median_time_ms = 0.0;
@@ -53,6 +60,12 @@ struct KernelResult {
     double effective_gflops = 0.0;  // same as gflops for native precisions
     double peak_percent = 0.0;
     int64_t total_flops = 0;
+    // Explicit transferred-byte count for memory-bandwidth kernels
+    // (category "memory"). Populated by the kernel itself alongside the
+    // legacy `gflops` field, which such kernels repurpose to hold GB/s.
+    // Read by floptic/dispatch_normalize.hpp when the inferred metric kind
+    // is TRANSFERRED_BYTES — total_flops is never reused as a byte count.
+    int64_t total_bytes = 0;
 
     // Environment (best-effort)
     double clock_mhz = 0.0;

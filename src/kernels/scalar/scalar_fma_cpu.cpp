@@ -1,6 +1,7 @@
 #include "floptic/kernel_base.hpp"
 #include "floptic/kernel_registry.hpp"
 #include "floptic/timer.hpp"
+#include "floptic/cpu_threads.hpp"
 #include <cmath>
 #include <vector>
 #include <iostream>
@@ -460,8 +461,11 @@ public:
     KernelResult run(const KernelConfig& config,
                      const DeviceInfo& device,
                      int measurement_trials) override {
-        int num_threads = config.threads > 0 ? config.threads : device.compute_units;
-        if (num_threads <= 0) num_threads = 1;
+        // Resolve requested threads against compile-time OpenMP support: a
+        // serial (no-OpenMP) build always executes on exactly one thread
+        // regardless of what was requested, and must account work that way.
+        int num_threads = resolve_effective_cpu_threads(
+            config.threads, device.compute_units, openmp_compiled_in());
 
         int64_t iters = config.iterations;
 

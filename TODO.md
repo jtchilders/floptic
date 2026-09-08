@@ -87,7 +87,7 @@ A published Floptic result must establish all of the following:
   - Build scalar, AVX2/FMA, and AVX-512 variants in separately targeted functions or translation units.
   - Dispatch using CPUID plus OSXSAVE/XGETBV checks.
   - Keep distributable binaries safe on machines older than the build host.
-- [ ] Handle SIMD tails correctly and count only executed operations.
+- [x] Handle SIMD tails correctly and count only executed operations.
 - [ ] Validate allocations and use RAII containers/aligned allocators.
 - [ ] Pin worker threads or report affinity and placement; characterize NUMA placement for multisocket systems.
 - [ ] First-touch vector allocations in the same placement policy used for measurement.
@@ -143,7 +143,7 @@ A published Floptic result must establish all of the following:
 - [ ] Add operation-count and typed-unit tests.
 - [ ] Add JSON schema and Markdown unit tests.
 - [ ] Add deterministic operand-generation and validation-policy tests.
-- [ ] Add CPU scalar/SIMD numerical tests and serial/OpenMP accounting tests.
+- [x] Add CPU scalar/SIMD numerical tests and serial/OpenMP accounting tests.
 - [ ] Register hardware-independent compile tests for CUDA/HIP code where toolkits are available.
 - [ ] Add hardware smoke tests on representative NVIDIA and AMD systems when runners are available.
 - [ ] Add GitHub Actions for CPU-only GCC and Clang builds, tests, and warning checks.

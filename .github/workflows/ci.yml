@@ -48,3 +48,54 @@ jobs:
 
       - name: Smoke test --list
         run: ./build-test/floptic --list
+
+  cpu-only-no-openmp:
+    name: ${{ matrix.compiler }} CPU-only, OpenMP explicitly disabled
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+          - compiler: clang
+            cc: clang
+            cxx: clang++
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ${{ matrix.compiler == 'clang' && 'clang' || 'g++' }}
+
+      # Ubuntu runners ship libgomp/libomp by default, so relying on
+      # find_package(OpenMP) failing to exercise the serial path is not
+      # reliable — this job passes -DFLOPTIC_ENABLE_OPENMP=OFF so the
+      # no-OpenMP CPU thread-accounting behavior (effective thread count
+      # must be exactly 1 regardless of --cpu-threads) is regression-tested
+      # on Linux even though a parallel runtime is present on the host.
+      - name: Configure (OpenMP disabled)
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: >
+          cmake -S . -B build-test-no-omp
+          -DFLOPTIC_ENABLE_CUDA=OFF
+          -DFLOPTIC_ENABLE_HIP=OFF
+          -DFLOPTIC_ENABLE_OPENMP=OFF
+          -DFLOPTIC_BUILD_TESTS=ON
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-test-no-omp -j "$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build-test-no-omp --output-on-failure
+
+      - name: Smoke test --list
+        run: ./build-test-no-omp/floptic --list
+

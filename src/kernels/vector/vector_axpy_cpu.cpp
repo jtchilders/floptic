@@ -1,143 +1,20 @@
 #include "floptic/kernel_base.hpp"
 #include "floptic/kernel_registry.hpp"
 #include "floptic/timer.hpp"
+#include "floptic/cpu_threads.hpp"
+#include "floptic/axpy_kernel.hpp"
+#include "floptic/aligned_buffer.hpp"
 #include <cmath>
 #include <vector>
 #include <iostream>
-#include <cstdlib>
 
 #ifdef FLOPTIC_HAS_OPENMP
 #include <omp.h>
 #endif
 
-// SIMD intrinsics
-#if defined(__AVX512F__)
-#include <immintrin.h>
-#define FLOPTIC_AXPY_AVX512
-#define FLOPTIC_AXPY_AVX2
-#elif defined(__AVX2__) && defined(__FMA__)
-#include <immintrin.h>
-#define FLOPTIC_AXPY_AVX2
-#endif
-
 namespace floptic {
 
 extern volatile double g_validation_sink;
-
-// ============================================================================
-// Scalar fallback
-// ============================================================================
-
-template <typename T>
-static double run_axpy_scalar(T* __restrict__ y, const T* __restrict__ x,
-                               T alpha, int64_t n, int num_threads) {
-    CpuTimer timer;
-    timer.start();
-
-    #ifdef FLOPTIC_HAS_OPENMP
-    #pragma omp parallel for num_threads(num_threads) schedule(static)
-    #endif
-    for (int64_t i = 0; i < n; i++) {
-        y[i] = std::fma(alpha, x[i], y[i]);
-    }
-
-    timer.stop();
-    return timer.elapsed_ms();
-}
-
-// ============================================================================
-// AVX2 AXPY — FP64
-// ============================================================================
-#ifdef FLOPTIC_AXPY_AVX2
-
-static double run_avx2_axpy_fp64(double* __restrict__ y, const double* __restrict__ x,
-                                  double alpha, int64_t n, int num_threads) {
-    __m256d va = _mm256_set1_pd(alpha);
-    CpuTimer timer;
-    timer.start();
-
-    #ifdef FLOPTIC_HAS_OPENMP
-    #pragma omp parallel for num_threads(num_threads) schedule(static)
-    #endif
-    for (int64_t i = 0; i < n - 3; i += 4) {
-        __m256d vx = _mm256_loadu_pd(&x[i]);
-        __m256d vy = _mm256_loadu_pd(&y[i]);
-        vy = _mm256_fmadd_pd(va, vx, vy);
-        _mm256_storeu_pd(&y[i], vy);
-    }
-
-    timer.stop();
-    return timer.elapsed_ms();
-}
-
-static double run_avx2_axpy_fp32(float* __restrict__ y, const float* __restrict__ x,
-                                  float alpha, int64_t n, int num_threads) {
-    __m256 va = _mm256_set1_ps(alpha);
-    CpuTimer timer;
-    timer.start();
-
-    #ifdef FLOPTIC_HAS_OPENMP
-    #pragma omp parallel for num_threads(num_threads) schedule(static)
-    #endif
-    for (int64_t i = 0; i < n - 7; i += 8) {
-        __m256 vx = _mm256_loadu_ps(&x[i]);
-        __m256 vy = _mm256_loadu_ps(&y[i]);
-        vy = _mm256_fmadd_ps(va, vx, vy);
-        _mm256_storeu_ps(&y[i], vy);
-    }
-
-    timer.stop();
-    return timer.elapsed_ms();
-}
-
-#endif // FLOPTIC_AXPY_AVX2
-
-// ============================================================================
-// AVX-512 AXPY — FP64 and FP32
-// ============================================================================
-#ifdef FLOPTIC_AXPY_AVX512
-
-static double run_avx512_axpy_fp64(double* __restrict__ y, const double* __restrict__ x,
-                                    double alpha, int64_t n, int num_threads) {
-    __m512d va = _mm512_set1_pd(alpha);
-    CpuTimer timer;
-    timer.start();
-
-    #ifdef FLOPTIC_HAS_OPENMP
-    #pragma omp parallel for num_threads(num_threads) schedule(static)
-    #endif
-    for (int64_t i = 0; i < n - 7; i += 8) {
-        __m512d vx = _mm512_loadu_pd(&x[i]);
-        __m512d vy = _mm512_loadu_pd(&y[i]);
-        vy = _mm512_fmadd_pd(va, vx, vy);
-        _mm512_storeu_pd(&y[i], vy);
-    }
-
-    timer.stop();
-    return timer.elapsed_ms();
-}
-
-static double run_avx512_axpy_fp32(float* __restrict__ y, const float* __restrict__ x,
-                                    float alpha, int64_t n, int num_threads) {
-    __m512 va = _mm512_set1_ps(alpha);
-    CpuTimer timer;
-    timer.start();
-
-    #ifdef FLOPTIC_HAS_OPENMP
-    #pragma omp parallel for num_threads(num_threads) schedule(static)
-    #endif
-    for (int64_t i = 0; i < n - 15; i += 16) {
-        __m512 vx = _mm512_loadu_ps(&x[i]);
-        __m512 vy = _mm512_loadu_ps(&y[i]);
-        vy = _mm512_fmadd_ps(va, vx, vy);
-        _mm512_storeu_ps(&y[i], vy);
-    }
-
-    timer.stop();
-    return timer.elapsed_ms();
-}
-
-#endif // FLOPTIC_AXPY_AVX512
 
 // ============================================================================
 // Kernel class
@@ -160,25 +37,22 @@ public:
     KernelResult run(const KernelConfig& config,
                      const DeviceInfo& device,
                      int measurement_trials) override {
-        int num_threads = config.threads > 0 ? config.threads : device.compute_units;
-        if (num_threads <= 0) num_threads = 1;
+        // Resolve requested threads against compile-time OpenMP support: a
+        // serial (no-OpenMP) build always executes on exactly one thread
+        // regardless of what was requested, and must account work that way.
+        int num_threads = resolve_effective_cpu_threads(
+            config.threads, device.compute_units, openmp_compiled_in());
 
         // Problem size
         int64_t n = static_cast<int64_t>(config.iterations) * 100;
         if (n < 1000000) n = 1000000;
         if (n > 100000000) n = 100000000;
 
+        // Every one of the n elements is fma'd exactly once (vectorized main
+        // loop plus scalar tail cleanup), so 2*n FLOPs is accurate for any n.
         int64_t flops_per_trial = n * 2;
 
-        // Determine SIMD path
-        std::string simd_path;
-#ifdef FLOPTIC_AXPY_AVX512
-        simd_path = "AVX-512";
-#elif defined(FLOPTIC_AXPY_AVX2)
-        simd_path = "AVX2";
-#else
-        simd_path = "scalar";
-#endif
+        std::string simd_path = axpy_active_simd_path();
 
         size_t elem_bytes = (config.precision == Precision::FP64) ? 8 : 4;
         double bytes_per_trial = 3.0 * n * elem_bytes;
@@ -189,8 +63,14 @@ public:
 
         // Allocate and initialize
         if (config.precision == Precision::FP64) {
-            auto* x = static_cast<double*>(std::aligned_alloc(64, n * sizeof(double)));
-            auto* y = static_cast<double*>(std::aligned_alloc(64, n * sizeof(double)));
+            AlignedBuffer<double> xbuf(n);
+            AlignedBuffer<double> ybuf(n);
+            if (!xbuf.valid() || !ybuf.valid()) {
+                std::cerr << "  ERROR: aligned allocation failed for n=" << n << std::endl;
+                return KernelResult{};
+            }
+            double* x = xbuf.get();
+            double* y = ybuf.get();
             double alpha = 1.5;
 
             #ifdef FLOPTIC_HAS_OPENMP
@@ -208,13 +88,11 @@ public:
                 #endif
                 for (int64_t i = 0; i < n; i++) y[i] = 2.0 - 1e-8 * i;
 
-#ifdef FLOPTIC_AXPY_AVX512
-                return run_avx512_axpy_fp64(y, x, alpha, n, num_threads);
-#elif defined(FLOPTIC_AXPY_AVX2)
-                return run_avx2_axpy_fp64(y, x, alpha, n, num_threads);
-#else
-                return run_axpy_scalar<double>(y, x, alpha, n, num_threads);
-#endif
+                CpuTimer timer;
+                timer.start();
+                axpy_run(y, x, alpha, n, num_threads);
+                timer.stop();
+                return timer.elapsed_ms();
             };
 
             // Warmup
@@ -228,8 +106,6 @@ public:
             }
 
             g_validation_sink = y[0];
-            std::free(x);
-            std::free(y);
 
             auto stats = TimingStats::compute(times);
 
@@ -253,8 +129,14 @@ public:
 
         } else {
             // FP32
-            auto* x = static_cast<float*>(std::aligned_alloc(64, n * sizeof(float)));
-            auto* y = static_cast<float*>(std::aligned_alloc(64, n * sizeof(float)));
+            AlignedBuffer<float> xbuf(n);
+            AlignedBuffer<float> ybuf(n);
+            if (!xbuf.valid() || !ybuf.valid()) {
+                std::cerr << "  ERROR: aligned allocation failed for n=" << n << std::endl;
+                return KernelResult{};
+            }
+            float* x = xbuf.get();
+            float* y = ybuf.get();
             float alpha = 1.5f;
 
             #ifdef FLOPTIC_HAS_OPENMP
@@ -271,13 +153,11 @@ public:
                 #endif
                 for (int64_t i = 0; i < n; i++) y[i] = 2.0f - 1e-6f * i;
 
-#ifdef FLOPTIC_AXPY_AVX512
-                return run_avx512_axpy_fp32(y, x, alpha, n, num_threads);
-#elif defined(FLOPTIC_AXPY_AVX2)
-                return run_avx2_axpy_fp32(y, x, alpha, n, num_threads);
-#else
-                return run_axpy_scalar<float>(y, x, alpha, n, num_threads);
-#endif
+                CpuTimer timer;
+                timer.start();
+                axpy_run(y, x, alpha, n, num_threads);
+                timer.stop();
+                return timer.elapsed_ms();
             };
 
             for (int w = 0; w < config.warmup_trials; w++) run_fn();
@@ -289,8 +169,6 @@ public:
             }
 
             g_validation_sink = y[0];
-            std::free(x);
-            std::free(y);
 
             auto stats = TimingStats::compute(times);
 

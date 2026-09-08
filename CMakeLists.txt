@@ -8,6 +8,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(FLOPTIC_ENABLE_CUDA "Enable CUDA backend" ON)
 option(FLOPTIC_ENABLE_HIP  "Enable HIP backend"  OFF)
 option(FLOPTIC_BUILD_TESTS "Build CTest unit tests" ON)
+# Allows an explicit no-OpenMP configuration (e.g. Linux CI) to prove serial
+# CPU thread accounting without depending on the OpenMP dev package being
+# absent from the host. Default ON preserves existing auto-detect behavior.
+option(FLOPTIC_ENABLE_OPENMP "Enable OpenMP if found" ON)
 
 # --- Backend Detection ---
 include(cmake/DetectBackends.cmake)
@@ -54,11 +58,15 @@ target_include_directories(floptic_core PUBLIC include)
 target_link_libraries(floptic_core PUBLIC nlohmann_json::nlohmann_json)
 
 # OpenMP
-find_package(OpenMP)
-if(OpenMP_CXX_FOUND)
+if(FLOPTIC_ENABLE_OPENMP)
+    find_package(OpenMP)
+endif()
+if(FLOPTIC_ENABLE_OPENMP AND OpenMP_CXX_FOUND)
     target_link_libraries(floptic_core PUBLIC OpenMP::OpenMP_CXX)
     target_compile_definitions(floptic_core PUBLIC FLOPTIC_HAS_OPENMP)
     message(STATUS "Floptic: OpenMP enabled")
+else()
+    message(STATUS "Floptic: OpenMP disabled (${FLOPTIC_ENABLE_OPENMP})")
 endif()
 
 # --- CUDA backend ---
@@ -181,7 +189,7 @@ message(STATUS "=== Floptic Build Configuration ===")
 message(STATUS "  Version:    ${PROJECT_VERSION}")
 message(STATUS "  CUDA:       ${FLOPTIC_HAS_CUDA}")
 message(STATUS "  HIP:        ${FLOPTIC_HAS_HIP}")
-message(STATUS "  OpenMP:     ${OpenMP_CXX_FOUND}")
+message(STATUS "  OpenMP:     ${FLOPTIC_ENABLE_OPENMP}/${OpenMP_CXX_FOUND}")
 message(STATUS "  Tests:      ${FLOPTIC_BUILD_TESTS}")
 message(STATUS "===================================")
 message(STATUS "")

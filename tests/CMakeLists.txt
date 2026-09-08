@@ -16,9 +16,37 @@ add_executable(test_kernel_warmup test_kernel_warmup.cpp)
 target_link_libraries(test_kernel_warmup PRIVATE floptic_core)
 add_test(NAME kernel_warmup COMMAND test_kernel_warmup)
 
+# Effective CPU thread resolution: pure function, no device/OpenMP runtime
+# needed at test-binary build time — it tests the decision logic itself
+# (see include/floptic/cpu_threads.hpp) against both openmp_available=true
+# and openmp_available=false, independent of how *this* test binary was
+# compiled.
+add_executable(test_cpu_threads test_cpu_threads.cpp)
+target_link_libraries(test_cpu_threads PRIVATE floptic_core)
+add_test(NAME cpu_threads COMMAND test_cpu_threads)
+
+# AXPY numerical tail correctness: exercises the exact compute kernel used
+# by vector_axpy_cpu (floptic/axpy_kernel.hpp) for small/odd sizes across
+# whatever SIMD path this build compiles (scalar/AVX2/AVX-512). Not timed.
+add_executable(test_axpy_kernel test_axpy_kernel.cpp)
+target_link_libraries(test_axpy_kernel PRIVATE floptic_core)
+add_test(NAME axpy_kernel COMMAND test_axpy_kernel)
+
 # Executable-level smoke test: drives the real `floptic` binary (not just
 # the parser/test-double unit tests) to cover exit-code and stdout/stderr
 # behavior end-to-end. CPU-only, kept fast via trials=1 / small inner-iters.
 add_test(NAME executable_smoke
     COMMAND ${CMAKE_COMMAND} -DFLOPTIC_EXE=$<TARGET_FILE:floptic>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/test_executable_smoke.cmake)
+
+# Regression test for the no-OpenMP serial work-accounting defect: a build
+# that was NOT linked against OpenMP must report/execute --cpu-threads=8 as
+# exactly one effective thread, not silently multiply work by 8. Only
+# meaningful (and only registered) when this configuration actually has no
+# OpenMP, so it fails loudly if the intended no-OpenMP CI job accidentally
+# picks up a parallel runtime instead of skipping silently either way.
+if(NOT OpenMP_CXX_FOUND)
+    add_test(NAME executable_no_openmp_thread_accounting
+        COMMAND ${CMAKE_COMMAND} -DFLOPTIC_EXE=$<TARGET_FILE:floptic>
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/test_no_openmp_threads.cmake)
+endif()

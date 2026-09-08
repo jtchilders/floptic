@@ -186,7 +186,8 @@ template <typename AllocT, typename RunFn>
 static SweepResult sweep_and_measure(rocblas_handle handle,
                                       RunFn run_fn,
                                       int elem_size,
-                                      int measurement_trials) {
+                                      int measurement_trials,
+                                      int warmup_trials) {
     std::vector<int> sizes = {1024, 2048, 4096, 8192, 16384, 32768};
     SweepResult best = {0, 1e9f, 0.0};
 
@@ -212,8 +213,8 @@ static SweepResult sweep_and_measure(rocblas_handle handle,
         hipMemset(C, 0, (size_t)M * M * elem_size);
 
         // Warmup
-        run_fn(handle, M, M, M, A, B, C);
-        run_fn(handle, M, M, M, A, B, C);
+        for (int w = 0; w < warmup_trials; w++)
+            run_fn(handle, M, M, M, A, B, C);
         hipDeviceSynchronize();
 
         // Measure
@@ -283,23 +284,23 @@ public:
 
         switch (config.precision) {
             case Precision::FP64: {
-                sr = sweep_and_measure<double>(handle, run_dgemm, sizeof(double), measurement_trials);
+                sr = sweep_and_measure<double>(handle, run_dgemm, sizeof(double), measurement_trials, config.warmup_trials);
                 // Use FP64_MFMA peak if available (rocBLAS uses matrix cores automatically)
                 peak_key = device.theoretical_peak_gflops.count("FP64_MFMA") ? "FP64_MFMA" : "FP64";
                 break;
             }
             case Precision::FP32: {
-                sr = sweep_and_measure<float>(handle, run_sgemm, sizeof(float), measurement_trials);
+                sr = sweep_and_measure<float>(handle, run_sgemm, sizeof(float), measurement_trials, config.warmup_trials);
                 peak_key = device.theoretical_peak_gflops.count("FP32_MFMA") ? "FP32_MFMA" : "FP32";
                 break;
             }
             case Precision::FP16: {
-                sr = sweep_and_measure<rocblas_half>(handle, run_hgemm, sizeof(rocblas_half), measurement_trials);
+                sr = sweep_and_measure<rocblas_half>(handle, run_hgemm, sizeof(rocblas_half), measurement_trials, config.warmup_trials);
                 peak_key = device.theoretical_peak_gflops.count("FP16_MFMA") ? "FP16_MFMA" : "FP16";
                 break;
             }
             case Precision::BF16: {
-                sr = sweep_and_measure<rocblas_bfloat16>(handle, run_bf16gemm, sizeof(rocblas_bfloat16), measurement_trials);
+                sr = sweep_and_measure<rocblas_bfloat16>(handle, run_bf16gemm, sizeof(rocblas_bfloat16), measurement_trials, config.warmup_trials);
                 peak_key = device.theoretical_peak_gflops.count("BF16_MFMA") ? "BF16_MFMA" : "BF16";
                 break;
             }
@@ -325,8 +326,8 @@ public:
                     hipMemset(C, 0, c_bytes);
 
                     // Warmup
-                    run_int8gemm(handle, M, M, M, A, B, C);
-                    run_int8gemm(handle, M, M, M, A, B, C);
+                    for (int w = 0; w < config.warmup_trials; w++)
+                        run_int8gemm(handle, M, M, M, A, B, C);
                     hipDeviceSynchronize();
 
                     std::vector<float> times;

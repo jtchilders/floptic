@@ -32,8 +32,32 @@ void test_every_accepted_spelling_maps_to_expected_enum() {
     };
 
     for (const auto& [spelling, expected] : cases) {
-        CHECK_EQ(static_cast<int>(string_to_precision(spelling)), static_cast<int>(expected));
+        auto result = string_to_precision(spelling);
+        CHECK_TRUE(result.has_value());
+        CHECK_EQ(static_cast<int>(*result), static_cast<int>(expected));
     }
+}
+
+void test_string_to_precision_returns_nullopt_for_unknown_spellings() {
+    CHECK_TRUE(!string_to_precision("bogus").has_value());
+    CHECK_TRUE(!string_to_precision("").has_value());
+    CHECK_TRUE(!string_to_precision("fp65").has_value());
+}
+
+void test_try_string_to_precision_rejects_unknown_spellings_without_fallback() {
+    Precision out = Precision::FP32;  // sentinel, should stay untouched on failure
+    CHECK_TRUE(!floptic::try_string_to_precision("bogus", out));
+    CHECK_TRUE(out == Precision::FP32);
+    CHECK_TRUE(!floptic::try_string_to_precision("", out));
+    CHECK_TRUE(!floptic::try_string_to_precision("fp65", out));
+}
+
+void test_try_string_to_precision_accepts_every_known_spelling() {
+    Precision out;
+    CHECK_TRUE(floptic::try_string_to_precision("fp64", out));
+    CHECK_TRUE(out == Precision::FP64);
+    CHECK_TRUE(floptic::try_string_to_precision("INT4", out));
+    CHECK_TRUE(out == Precision::INT4);
 }
 
 void test_precision_to_string_produces_canonical_spelling_for_every_enum() {
@@ -62,6 +86,9 @@ void test_standard_precision_enumeration_has_no_duplicates() {
 
 int main() {
     test_every_accepted_spelling_maps_to_expected_enum();
+    test_string_to_precision_returns_nullopt_for_unknown_spellings();
+    test_try_string_to_precision_rejects_unknown_spellings_without_fallback();
+    test_try_string_to_precision_accepts_every_known_spelling();
     test_precision_to_string_produces_canonical_spelling_for_every_enum();
     test_standard_precision_enumeration_has_no_duplicates();
     return floptic_test::finish();

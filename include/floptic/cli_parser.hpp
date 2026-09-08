@@ -13,7 +13,7 @@ struct CliOptions {
     int trials = 100;                       // measurement trials (repetitions for statistics)
     int inner_iters = 100000;               // inner loop iterations per trial (work per kernel launch)
     int warmup = 10;                        // warmup iterations
-    std::string report_format = "json";     // "json", "csv", "stdout"
+    std::string report_format = "json";     // "json" or "stdout"
     std::string output_path;                // empty = stdout
     std::string output_md_path;             // markdown report path (empty = no md output)
 
@@ -26,6 +26,14 @@ struct CliOptions {
     bool list_kernels = false;
     bool show_info = false;
     bool help = false;
+
+    // Structured parse result. When valid is false, `error` holds a concise,
+    // human-readable diagnostic (one or more newline-separated lines) and no
+    // other field should be trusted for use. Callers must check `valid`
+    // instead of relying on exceptions or on `help` being set as a proxy for
+    // failure.
+    bool valid = true;
+    std::string error;
 };
 
 CliOptions parse_args(int argc, char* argv[]);

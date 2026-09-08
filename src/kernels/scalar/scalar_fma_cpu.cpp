@@ -541,7 +541,7 @@ public:
         };
 
         // Warmup
-        for (int w = 0; w < 3; w++) {
+        for (int w = 0; w < config.warmup_trials; w++) {
             run_fn();
         }
 

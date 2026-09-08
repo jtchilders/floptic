@@ -78,7 +78,7 @@ public:
                           int64_t N, size_t elem_sz) {
             using T = std::remove_pointer_t<decltype(x_ptr)>;
             // Warmup
-            for (int w = 0; w < 10; w++)
+            for (int w = 0; w < config.warmup_trials; w++)
                 run_axpy(blocks, tpb, alpha_val, x_ptr, y_ptr, N);
 
             std::vector<double> times;

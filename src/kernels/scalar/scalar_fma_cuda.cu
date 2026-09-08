@@ -213,7 +213,7 @@ public:
                       << "/" << config.mode << "] blocks=" << blocks
                       << " threads=" << tpb << " iters=" << iters << std::endl;
 
-            for (int w = 0; w < 3; w++)
+            for (int w = 0; w < config.warmup_trials; w++)
                 dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
 
             std::vector<double> times;
@@ -261,7 +261,8 @@ public:
                 int64_t flops_per_trial = static_cast<int64_t>(total_threads) * chains * iters * 2;
 
                 // Quick warmup + 2 trial measurement
-                dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
+                for (int w = 0; w < config.warmup_trials; w++)
+                    dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
                 float ms1 = dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
                 float ms2 = dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
                 double median_ms = std::min(ms1, ms2);
@@ -285,7 +286,7 @@ public:
                   << measurement_trials << " trials)" << std::endl;
 
         // Full measurement at best config
-        for (int w = 0; w < 3; w++)
+        for (int w = 0; w < config.warmup_trials; w++)
             dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
 
         std::vector<double> times;

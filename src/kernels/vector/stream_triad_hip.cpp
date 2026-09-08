@@ -122,7 +122,7 @@ public:
             hipMemset(c, 0, N * sizeof(double));
 
             // Warmup
-            for (int w = 0; w < 10; w++)
+            for (int w = 0; w < config.warmup_trials; w++)
                 run_triad(blocks, tpb, a, b, c, 2.0, N);
 
             std::vector<double> times;
@@ -155,7 +155,7 @@ public:
             hipMemset(b, 0, N * sizeof(float));
             hipMemset(c, 0, N * sizeof(float));
 
-            for (int w = 0; w < 10; w++)
+            for (int w = 0; w < config.warmup_trials; w++)
                 run_triad(blocks, tpb, a, b, c, 2.0f, N);
 
             std::vector<double> times;
@@ -226,7 +226,7 @@ public:
         hipMemset(a, 0, N * sizeof(double));
         hipMemset(b, 0, N * sizeof(double));
 
-        for (int w = 0; w < 10; w++)
+        for (int w = 0; w < config.warmup_trials; w++)
             run_copy(blocks, tpb, a, b, N);
 
         std::vector<double> times;

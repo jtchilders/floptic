@@ -176,7 +176,7 @@ public:
                   << " blocks=" << blocks << " threads=" << tpb << std::endl;
 
         // Warmup
-        for (int w = 0; w < 3; w++) {
+        for (int w = 0; w < config.warmup_trials; w++) {
             dispatch_axpy(config.precision, n, blocks, tpb);
         }
 

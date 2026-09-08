@@ -13,6 +13,8 @@ struct KernelConfig {
     std::string mode = "throughput";    // "throughput" or "latency"
     int64_t iterations = 100000;        // inner loop iterations
     int threads = 0;                    // 0 = auto-detect (CPU: all cores, GPU: all SMs)
+    int warmup_trials = 10;             // warmup iterations before/at each timed measurement;
+                                         // 0 must perform no explicit warmup launches
 
     // GPU-specific launch config (0 = auto)
     int gpu_blocks = 0;                 // total thread blocks

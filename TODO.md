@@ -68,17 +68,17 @@ A published Floptic result must establish all of the following:
 
 ## P1 — CLI and control correctness
 
-- [ ] Implement `--kernel=<NAME>` filtering and fail on unknown kernel names.
-- [ ] Pass `--warmup=<N>` into every kernel; remove hard-coded warmup counts.
-- [ ] Validate all numeric options before device discovery.
+- [x] Implement `--kernel=<NAME>` filtering and fail on unknown kernel names.
+- [x] Pass `--warmup=<N>` into every kernel; remove hard-coded warmup counts.
+- [x] Validate all numeric options before device discovery.
   - Require positive trials and inner iterations.
   - Require nonnegative warmup.
   - Validate CPU threads, GPU blocks, threads per block, and blocks per SM against sensible ranges.
   - Catch conversion/range errors and return a concise error with nonzero status.
-- [ ] Reject unknown precision, device, category, and report-format values; never map typos to FP64.
-- [ ] Deduplicate repeated device/category/precision selections.
-- [ ] Make an empty benchmark selection an error.
-- [ ] Implement or remove `--report`; make `--info` produce useful output without requiring `--output`.
+- [x] Reject unknown precision, device, category, and report-format values; never map typos to FP64.
+- [x] Deduplicate repeated device/category/precision selections.
+- [x] Make an empty benchmark selection an error.
+- [x] Implement or remove `--report`; make `--info` produce useful output without requiring `--output`.
 - [ ] Ensure report-write failures propagate to the process exit code.
 
 ## P1 — CPU methodology

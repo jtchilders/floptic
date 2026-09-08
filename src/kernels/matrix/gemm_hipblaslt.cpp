@@ -54,7 +54,8 @@ static float run_hipblaslt_gemm(hipblasLtHandle_t handle,
                                  void* A, void* B, void* C, void* D,
                                  void* workspace, size_t workspace_size,
                                  void* d_a_scale, void* d_b_scale,
-                                 void* d_d_scale) {
+                                 void* d_d_scale,
+                                 int warmup_trials) {
     hipblasLtMatrixLayout_t matA, matB, matC, matD;
     hipblasLtMatmulDesc_t matmul;
     hipblasLtMatmulPreference_t pref;
@@ -111,10 +112,12 @@ static float run_hipblaslt_gemm(hipblasLtHandle_t handle,
             HIP_CHECK(hipEventCreate(&stop));
 
             // Warmup
-            hipblasLtMatmul(handle, matmul, &alpha, A, matA, B, matB, &beta, C, matC,
-                            D, matD, &heuristicResults[ai].algo, workspace,
-                            heuristicResults[ai].workspaceSize, 0);
-            HIP_CHECK(hipDeviceSynchronize());
+            for (int w = 0; w < warmup_trials; w++) {
+                hipblasLtMatmul(handle, matmul, &alpha, A, matA, B, matB, &beta, C, matC,
+                                D, matD, &heuristicResults[ai].algo, workspace,
+                                heuristicResults[ai].workspaceSize, 0);
+                HIP_CHECK(hipDeviceSynchronize());
+            }
 
             HIP_CHECK(hipEventRecord(start));
             hipblasLtMatmul(handle, matmul, &alpha, A, matA, B, matB, &beta, C, matC,
@@ -155,7 +158,8 @@ struct SweepResult {
 
 static SweepResult sweep_hipblaslt(hipblasLtHandle_t handle,
                                     const HipBlasLtGemmConfig& cfg,
-                                    int measurement_trials) {
+                                    int measurement_trials,
+                                    int warmup_trials) {
     std::vector<int> sizes = {1024, 2048, 4096, 8192, 16384, 32768};
     SweepResult best = {0, 1e9f, 0.0};
 
@@ -199,7 +203,7 @@ static SweepResult sweep_hipblaslt(hipblasLtHandle_t handle,
         // Find best algo for this size
         float probe_ms = run_hipblaslt_gemm(handle, cfg, M, M, M,
                                              A, B, C, D, workspace, workspace_size,
-                                             d_a_scale, d_b_scale, d_d_scale);
+                                             d_a_scale, d_b_scale, d_d_scale, warmup_trials);
         if (probe_ms <= 0) {
             HIP_CHECK(hipFree(A)); HIP_CHECK(hipFree(B)); HIP_CHECK(hipFree(C)); HIP_CHECK(hipFree(D));
             continue;
@@ -385,7 +389,7 @@ public:
             }
         }
 
-        auto sr = sweep_hipblaslt(handle, cfg, measurement_trials);
+        auto sr = sweep_hipblaslt(handle, cfg, measurement_trials, config.warmup_trials);
 
         KernelResult result;
         result.gflops = sr.best_gflops;

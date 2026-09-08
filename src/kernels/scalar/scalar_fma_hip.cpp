@@ -183,7 +183,7 @@ public:
         double flops_per_trial = (double)total_threads * iters * fma_chains * 2.0;
 
         // Warmup
-        for (int w = 0; w < 10; w++) {
+        for (int w = 0; w < config.warmup_trials; w++) {
             dispatch_benchmark(config.precision, config.mode, blocks, tpb, iters);
         }
         hipDeviceSynchronize();

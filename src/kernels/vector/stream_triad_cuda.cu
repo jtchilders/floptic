@@ -204,7 +204,7 @@ public:
                   << (n * elem_size / (1024*1024)) << " MB/array)" << std::endl;
 
         // Warmup
-        for (int w = 0; w < 3; w++) {
+        for (int w = 0; w < config.warmup_trials; w++) {
             if (config.precision == Precision::FP64)
                 run_stream_triad_fp64(n, blocks, tpb);
             else
@@ -292,7 +292,7 @@ public:
         std::cerr << "  Running stream_copy [cuda/FP64] n=" << n
                   << " (" << (n * 8 / (1024*1024)) << " MB/array)" << std::endl;
 
-        for (int w = 0; w < 3; w++) {
+        for (int w = 0; w < config.warmup_trials; w++) {
             run_stream_copy_fp64(n, blocks, tpb);
         }
 

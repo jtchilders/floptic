@@ -218,7 +218,7 @@ public:
             };
 
             // Warmup
-            for (int w = 0; w < 3; w++) run_fn();
+            for (int w = 0; w < config.warmup_trials; w++) run_fn();
 
             // Measurement
             std::vector<double> times;
@@ -280,7 +280,7 @@ public:
 #endif
             };
 
-            for (int w = 0; w < 3; w++) run_fn();
+            for (int w = 0; w < config.warmup_trials; w++) run_fn();
 
             std::vector<double> times;
             times.reserve(measurement_trials);

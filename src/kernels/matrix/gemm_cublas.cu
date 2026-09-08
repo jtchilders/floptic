@@ -466,7 +466,7 @@ public:
             int64_t flops_per_trial = 2LL * M * N * K;
 
             // Warmup
-            for (int w = 0; w < 3; w++) {
+            for (int w = 0; w < config.warmup_trials; w++) {
                 dispatch_gemm(handle, config.precision, M, N, K);
             }
 
@@ -499,7 +499,7 @@ public:
                   << measurement_trials << " trials)" << std::endl;
 
         // Warmup at best size
-        for (int w = 0; w < 3; w++) {
+        for (int w = 0; w < config.warmup_trials; w++) {
             dispatch_gemm(handle, config.precision, M, N, K);
         }
 
@@ -602,7 +602,7 @@ public:
 
             int64_t flops = 2LL * M * N * K;
 
-            for (int w = 0; w < 3; w++) dispatch_notc(M, N, K);
+            for (int w = 0; w < config.warmup_trials; w++) dispatch_notc(M, N, K);
 
             std::vector<double> times;
             int sweep_trials = std::min(3, measurement_trials);
@@ -628,7 +628,7 @@ public:
         std::cerr << "  Best size: M=N=K=" << best_size << " → full measurement ("
                   << measurement_trials << " trials)" << std::endl;
 
-        for (int w = 0; w < 3; w++) dispatch_notc(M, N, K);
+        for (int w = 0; w < config.warmup_trials; w++) dispatch_notc(M, N, K);
 
         std::vector<double> times;
         times.reserve(measurement_trials);

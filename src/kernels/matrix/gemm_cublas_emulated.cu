@@ -114,7 +114,7 @@ static float run_emu_dgemm(cublasHandle_t handle, int M, int N, int K) {
 using RunFn = float (*)(cublasHandle_t, int, int, int);
 
 static KernelResult sweep_and_measure_emu(
-    cublasHandle_t handle, const DeviceInfo& device, int measurement_trials,
+    cublasHandle_t handle, const DeviceInfo& device, int measurement_trials, int warmup_trials,
     const std::string& label, const std::string& peak_key,
     RunFn run_fn, size_t elem_size)
 {
@@ -138,7 +138,7 @@ static KernelResult sweep_and_measure_emu(
         }
 
         // Warmup
-        for (int w = 0; w < 3; w++) run_fn(handle, M, N, K);
+        for (int w = 0; w < warmup_trials; w++) run_fn(handle, M, N, K);
 
         // Quick trial
         std::vector<double> times;
@@ -172,7 +172,7 @@ static KernelResult sweep_and_measure_emu(
     std::cerr << "  Best size: M=N=K=" << best_size << " → full measurement ("
               << measurement_trials << " trials)" << std::endl;
 
-    for (int w = 0; w < 3; w++) run_fn(handle, M, N, K);
+    for (int w = 0; w < warmup_trials; w++) run_fn(handle, M, N, K);
 
     std::vector<double> times;
     times.reserve(measurement_trials);
@@ -262,7 +262,7 @@ public:
         // Theoretical peak is BF16_TC_rate / 9 (since each FP32 op costs 9 BF16 ops).
         // But we report effective FP32 GFLOP/s and compare vs FP32 CUDA core peak.
         // This way we see the speedup vs native FP32.
-        auto result = sweep_and_measure_emu(handle, device, measurement_trials,
+        auto result = sweep_and_measure_emu(handle, device, measurement_trials, config.warmup_trials,
             "gemm_cublas_emu_fp32 [BF16x9 emulated FP32]",
             "FP32", run_emu_sgemm, sizeof(float));
 
@@ -354,7 +354,7 @@ public:
             "set emulation strategy eager");
 
         // Compare vs native FP64 peak (CUDA cores)
-        auto result = sweep_and_measure_emu(handle, device, measurement_trials,
+        auto result = sweep_and_measure_emu(handle, device, measurement_trials, config.warmup_trials,
             "gemm_cublas_emu_fp64 [Ozaki emulated FP64 via INT8 TC]",
             "FP64", run_emu_dgemm, sizeof(double));
 

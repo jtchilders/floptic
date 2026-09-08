@@ -5,6 +5,7 @@
 #include <iostream>
 #include <algorithm>
 #include <map>
+#include <set>
 #include <cstdio>
 
 // Force-link kernel translation units from static libraries.
@@ -99,6 +100,11 @@ int main(int argc, char* argv[]) {
 
     auto opts = parse_args(argc, argv);
 
+    if (!opts.valid) {
+        std::cerr << opts.error << std::endl;
+        return 1;
+    }
+
     if (opts.help) {
         print_usage(argv[0]);
         return 0;
@@ -131,7 +137,12 @@ int main(int argc, char* argv[]) {
 #ifdef FLOPTIC_HAS_HIP
         info_report.build_backends.push_back("hip");
 #endif
-        write_json_report(info_report, opts.output_path);
+        if (opts.output_path.empty()) {
+            // No output path: emit valid JSON to stdout (errors/progress stay on stderr).
+            std::cout << report_to_json(info_report).dump(2) << std::endl;
+        } else {
+            write_json_report(info_report, opts.output_path);
+        }
         return 0;
     }
 
@@ -173,6 +184,58 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // --kernel=<NAME>: must match a registered kernel for at least one of the
+    // selected devices' backends, or we fail fast with a diagnostic rather
+    // than silently reaching the generic "no benchmarks executed" error
+    // (e.g. a CUDA-only kernel name requested with --device=cpu).
+    if (!opts.kernel_name.empty()) {
+        std::set<std::string> target_backends;
+        for (auto& dev : target_devices) {
+            std::string b = "cpu";
+            if (dev.id.substr(0, 4) == "cuda") b = "cuda";
+            else if (dev.id.substr(0, 3) == "hip") b = "hip";
+            target_backends.insert(b);
+        }
+
+        bool found_any_backend = false;
+        bool found_for_selected_backend = false;
+        std::set<std::string> backends_with_this_kernel;
+        for (auto& k : registry.list_kernel_names()) {
+            // list_kernel_names() formats as "name [backend/category]"
+            auto bracket = k.find(" [");
+            std::string kname = (bracket != std::string::npos) ? k.substr(0, bracket) : k;
+            if (kname != opts.kernel_name) continue;
+            found_any_backend = true;
+            if (bracket != std::string::npos) {
+                auto slash = k.find('/', bracket);
+                if (slash != std::string::npos) {
+                    std::string backend = k.substr(bracket + 2, slash - (bracket + 2));
+                    backends_with_this_kernel.insert(backend);
+                    if (target_backends.count(backend)) found_for_selected_backend = true;
+                }
+            }
+        }
+
+        if (!found_any_backend) {
+            std::cerr << "Unknown kernel: " << opts.kernel_name
+                      << " (use --list to see available kernels)" << std::endl;
+            return 1;
+        }
+        if (!found_for_selected_backend) {
+            std::cerr << "Kernel '" << opts.kernel_name << "' is registered for backend(s) [";
+            bool first = true;
+            for (auto& b : backends_with_this_kernel) {
+                if (!first) std::cerr << ", ";
+                std::cerr << b;
+                first = false;
+            }
+            std::cerr << "] but not for the selected device backend(s) (use --list to see "
+                      << "available kernels, or --device to target a matching backend)"
+                      << std::endl;
+            return 1;
+        }
+    }
+
     // Build report
     Report report;
     report.devices = target_devices;
@@ -188,6 +251,8 @@ int main(int argc, char* argv[]) {
 #endif
 
     std::cerr << "\nRunning benchmarks..." << std::endl;
+
+    bool executed_any = false;
 
     for (auto& device : target_devices) {
         std::cerr << "\n=== Device: " << device.id << " (" << device.name << ") ===" << std::endl;
@@ -205,6 +270,10 @@ int main(int argc, char* argv[]) {
             auto kernels = registry.get_kernels(cat, dev_backend);
 
             for (auto* kernel : kernels) {
+                // --kernel=<NAME> restricts execution to the exact match
+                if (!opts.kernel_name.empty() && kernel->name() != opts.kernel_name)
+                    continue;
+
                 // Skip kernels that aren't available on this device
                 if (!kernel->is_available(device))
                     continue;
@@ -222,6 +291,7 @@ int main(int argc, char* argv[]) {
                         config.iterations = opts.inner_iters;
                         config.device_id = device.id;
                         config.threads = opts.cpu_threads;
+                        config.warmup_trials = opts.warmup;
                         config.gpu_blocks = opts.gpu_blocks;
                         config.gpu_threads_per_block = opts.gpu_threads_per_block;
                         config.gpu_blocks_per_sm = opts.gpu_blocks_per_sm;
@@ -243,6 +313,8 @@ int main(int argc, char* argv[]) {
                             continue;
                         }
 
+                        executed_any = true;
+
                         BenchmarkEntry entry;
                         entry.device_id = device.id;
                         entry.kernel_name = kernel->name();
@@ -262,6 +334,15 @@ int main(int argc, char* argv[]) {
     // Summary table
     // ========================================================================
     std::cerr << "\n";
+
+    // An empty benchmark selection is a failure, not a silently-successful
+    // empty report — e.g. every combination was unsupported, or --kernel /
+    // --precision / --device / --kernels narrowed selection to nothing.
+    if (!executed_any) {
+        std::cerr << "ERROR: no benchmarks were executed for the selected "
+                   << "device/kernel/precision/category combination." << std::endl;
+        return 1;
+    }
 
     // Group benchmarks by device
     std::map<std::string, std::vector<const BenchmarkEntry*>> by_device;
@@ -343,7 +424,17 @@ int main(int argc, char* argv[]) {
         std::cerr << std::endl;
     }
 
-    // Write JSON report to file if --output was specified
+    // Write JSON report: --report=stdout emits JSON to stdout (in addition to
+    // any --output file); --report=json (default) preserves the existing
+    // behavior of only writing when --output is given. Report write failures
+    // are not propagated to the exit code here: write_json_report/
+    // write_markdown_report (report.hpp / src/report/*) are out of scope for
+    // this change and currently return void with no error signal — see
+    // TODO.md "Ensure report-write failures propagate to the process exit
+    // code" which remains unchecked pending a signature change there.
+    if (opts.report_format == "stdout") {
+        std::cout << report_to_json(report).dump(2) << std::endl;
+    }
     write_json_report(report, opts.output_path);
 
     // Write markdown report if --output-md was specified

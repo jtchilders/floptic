@@ -321,7 +321,7 @@ static float run_nvfp4(int M, int N, int K) {
 // Helper: sweep sizes, auto-tune, and run full measurement
 template <typename SetupFn, typename RunFn>
 static KernelResult sweep_and_measure(
-    const DeviceInfo& device, int measurement_trials,
+    const DeviceInfo& device, int measurement_trials, int warmup_trials,
     const std::string& label, const std::string& peak_key,
     SetupFn setup_fn, RunFn run_fn)
 {
@@ -346,7 +346,7 @@ static KernelResult sweep_and_measure(
         setup_fn(M, N, K);
 
         // Warmup
-        for (int w = 0; w < 3; w++) {
+        for (int w = 0; w < warmup_trials; w++) {
             float ms = run_fn(M, N, K);
             if (ms <= 0) break;
         }
@@ -389,7 +389,7 @@ static KernelResult sweep_and_measure(
               << measurement_trials << " trials)" << std::endl;
 
     setup_fn(M, N, K);
-    for (int w = 0; w < 3; w++) run_fn(M, N, K);
+    for (int w = 0; w < warmup_trials; w++) run_fn(M, N, K);
 
     std::vector<double> times;
     times.reserve(measurement_trials);
@@ -457,7 +457,7 @@ public:
             dev_idx = std::stoi(device.id.substr(pos + 1));
         cudaSetDevice(dev_idx);
 
-        return sweep_and_measure(device, measurement_trials,
+        return sweep_and_measure(device, measurement_trials, config.warmup_trials,
             "gemm_cublas_mxfp8 [cuda/FP8_E4M3/throughput (block-scaled TC)]",
             "FP8_TC",
             setup_mxfp8, run_mxfp8);
@@ -502,7 +502,7 @@ public:
             dev_idx = std::stoi(device.id.substr(pos + 1));
         cudaSetDevice(dev_idx);
 
-        return sweep_and_measure(device, measurement_trials,
+        return sweep_and_measure(device, measurement_trials, config.warmup_trials,
             "gemm_cublas_nvfp4 [cuda/FP4/throughput (block-scaled TC)]",
             "FP4_TC",
             setup_nvfp4, run_nvfp4);

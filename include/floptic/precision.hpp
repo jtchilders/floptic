@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <cstddef>
+#include <optional>
 
 namespace floptic {
 
@@ -34,18 +35,30 @@ inline std::string precision_to_string(Precision p) {
     return "UNKNOWN";
 }
 
-inline Precision string_to_precision(const std::string& s) {
-    if (s == "fp64" || s == "FP64") return Precision::FP64;
-    if (s == "fp32" || s == "FP32") return Precision::FP32;
-    if (s == "fp16" || s == "FP16") return Precision::FP16;
-    if (s == "bf16" || s == "BF16") return Precision::BF16;
-    if (s == "tf32" || s == "TF32") return Precision::TF32;
-    if (s == "fp8e4m3" || s == "FP8_E4M3" || s == "fp8" || s == "FP8") return Precision::FP8_E4M3;
-    if (s == "fp8e5m2" || s == "FP8_E5M2") return Precision::FP8_E5M2;
-    if (s == "fp4" || s == "FP4") return Precision::FP4;
-    if (s == "int8" || s == "INT8") return Precision::INT8;
-    if (s == "int4" || s == "INT4") return Precision::INT4;
-    return Precision::FP64; // default
+// Strict parse: returns false (leaving `out` untouched) for any spelling that
+// is not one of the accepted, exact aliases. Callers that must reject unknown
+// input (e.g. CLI parsing) should use this instead of string_to_precision.
+inline bool try_string_to_precision(const std::string& s, Precision& out) {
+    if (s == "fp64" || s == "FP64") { out = Precision::FP64; return true; }
+    if (s == "fp32" || s == "FP32") { out = Precision::FP32; return true; }
+    if (s == "fp16" || s == "FP16") { out = Precision::FP16; return true; }
+    if (s == "bf16" || s == "BF16") { out = Precision::BF16; return true; }
+    if (s == "tf32" || s == "TF32") { out = Precision::TF32; return true; }
+    if (s == "fp8e4m3" || s == "FP8_E4M3" || s == "fp8" || s == "FP8") { out = Precision::FP8_E4M3; return true; }
+    if (s == "fp8e5m2" || s == "FP8_E5M2") { out = Precision::FP8_E5M2; return true; }
+    if (s == "fp4" || s == "FP4") { out = Precision::FP4; return true; }
+    if (s == "int8" || s == "INT8") { out = Precision::INT8; return true; }
+    if (s == "int4" || s == "INT4") { out = Precision::INT4; return true; }
+    return false;
+}
+
+// Strict parse returning std::optional<Precision>: std::nullopt for any
+// spelling that is not one of the accepted, exact aliases. This is the
+// public string-to-precision API; there is no silent fallback to FP64.
+inline std::optional<Precision> string_to_precision(const std::string& s) {
+    Precision p;
+    if (try_string_to_precision(s, p)) return p;
+    return std::nullopt;
 }
 
 inline std::vector<Precision> all_standard_precisions() {

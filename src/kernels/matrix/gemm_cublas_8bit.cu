@@ -473,7 +473,7 @@ public:
 
             int64_t flops = 2LL * M * N * K;
 
-            for (int w = 0; w < 3; w++) run_gemm_int8(M, N, K);
+            for (int w = 0; w < config.warmup_trials; w++) run_gemm_int8(M, N, K);
 
             std::vector<double> times;
             int sweep_trials = std::min(3, measurement_trials);
@@ -509,7 +509,7 @@ public:
                   << measurement_trials << " trials)" << std::endl;
 
         autotune_int8(M, N, K);
-        for (int w = 0; w < 3; w++) run_gemm_int8(M, N, K);
+        for (int w = 0; w < config.warmup_trials; w++) run_gemm_int8(M, N, K);
 
         std::vector<double> times;
         times.reserve(measurement_trials);
@@ -621,7 +621,7 @@ public:
 
             int64_t flops = 2LL * M * N * K;
 
-            for (int w = 0; w < 3; w++) run_gemm_fp8(fp8Type, M, N, K);
+            for (int w = 0; w < config.warmup_trials; w++) run_gemm_fp8(fp8Type, M, N, K);
 
             std::vector<double> times;
             int sweep_trials = std::min(3, measurement_trials);
@@ -657,7 +657,7 @@ public:
                   << measurement_trials << " trials)" << std::endl;
 
         autotune_fp8(fp8Type, M, N, K);
-        for (int w = 0; w < 3; w++) run_gemm_fp8(fp8Type, M, N, K);
+        for (int w = 0; w < config.warmup_trials; w++) run_gemm_fp8(fp8Type, M, N, K);
 
         std::vector<double> times;
         times.reserve(measurement_trials);

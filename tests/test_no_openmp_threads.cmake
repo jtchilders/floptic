@@ -41,17 +41,58 @@ if(NOT "${_has_eight_threads}" STREQUAL "")
 endif()
 
 # The JSON report's flop accounting must reflect one effective thread's
-# worth of work, not eight. flops_per_trial for scalar_fma/throughput is
-# num_threads * chains(8) * lanes * iters * 2 — an 8x inflation from the
-# thread-count bug would be trivially visible as total_flops being 8x too
-# large relative to a manually computed one-thread expectation, but the
-# precise chains/lanes for a given SIMD build vary, so instead we assert
-# the machine-readable effective-thread signal directly: the report is
-# well-formed JSON with a nonzero result, proving no crash/regression, and
-# the human-readable status line above is the primary correctness check.
-string(JSON _benchmarks ERROR_VARIABLE _json_err GET "${_stdout}" benchmarks)
+# worth of work, not eight. On the AVX2/FP64 path exercised by this CI
+# matrix (lanes=4), flops_per_trial for scalar_fma at inner-iters=100 and
+# one effective thread is:
+#   throughput: threads(1) * chains(8) * lanes(4) * iters(100) * 2 = 6400
+#   latency:    threads(1) * lanes(4)             * iters(100) * 2 =  800
+# An 8x inflation from the thread-count bug (using the raw requested
+# --cpu-threads=8 instead of the resolved effective count) would instead
+# report 51200 / 6400 respectively — asserting the exact expected values
+# below fails loudly against either the old buggy total or any other
+# unexpected drift, rather than only checking "nonzero".
+string(JSON _num_benchmarks ERROR_VARIABLE _json_err LENGTH "${_stdout}" benchmarks)
 if(_json_err)
     message(FATAL_ERROR "stdout is not valid JSON with a 'benchmarks' key: ${_json_err}\nstdout: ${_stdout}")
 endif()
 
-message(STATUS "[no_openmp_thread_accounting] OK")
+set(_throughput_flops)
+set(_latency_flops)
+if(_num_benchmarks GREATER 0)
+    math(EXPR _last_index "${_num_benchmarks} - 1")
+    foreach(_i RANGE 0 ${_last_index})
+        string(JSON _kernel GET "${_stdout}" benchmarks ${_i} kernel)
+        if(NOT _kernel STREQUAL "scalar_fma")
+            continue()
+        endif()
+        string(JSON _mode GET "${_stdout}" benchmarks ${_i} mode)
+        string(JSON _flops GET "${_stdout}" benchmarks ${_i} results total_flops)
+        if(_mode STREQUAL "throughput")
+            set(_throughput_flops "${_flops}")
+        elseif(_mode STREQUAL "latency")
+            set(_latency_flops "${_flops}")
+        endif()
+    endforeach()
+endif()
+
+if(NOT DEFINED _throughput_flops OR "${_throughput_flops}" STREQUAL "")
+    message(FATAL_ERROR "no scalar_fma throughput benchmark entry found in JSON output\nstdout: ${_stdout}")
+endif()
+if(NOT DEFINED _latency_flops OR "${_latency_flops}" STREQUAL "")
+    message(FATAL_ERROR "no scalar_fma latency benchmark entry found in JSON output\nstdout: ${_stdout}")
+endif()
+
+if(NOT _throughput_flops EQUAL 6400)
+    message(FATAL_ERROR "scalar_fma throughput total_flops expected 6400 "
+                         "(1 effective thread x 8 chains x 4 lanes x 100 iters x 2) "
+                         "but got ${_throughput_flops} — the old thread-count bug would "
+                         "report 51200 (8x inflation)\nstdout: ${_stdout}")
+endif()
+if(NOT _latency_flops EQUAL 800)
+    message(FATAL_ERROR "scalar_fma latency total_flops expected 800 "
+                         "(1 effective thread x 4 lanes x 100 iters x 2) "
+                         "but got ${_latency_flops} — the old thread-count bug would "
+                         "report 6400 (8x inflation)\nstdout: ${_stdout}")
+endif()
+
+message(STATUS "[no_openmp_thread_accounting] OK (throughput=${_throughput_flops}, latency=${_latency_flops})")

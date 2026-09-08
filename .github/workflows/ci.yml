@@ -98,4 +98,3 @@ jobs:
 
       - name: Smoke test --list
         run: ./build-test-no-omp/floptic --list
-

@@ -84,7 +84,8 @@ nlohmann::json report_to_json(const Report& report) {
         b["category"] = entry.category;
         b["precision"] = entry.precision;
         b["mode"] = entry.mode;
-        b["status"] = benchmark_status_to_string(entry.result.status);
+        b["status"] = benchmark_status_to_string(
+            resolve_status_for_serialization(entry.result.status));
 
         // Typed primary metric (schema v2): stable kind, base SI unit,
         // rate, and the explicit operation/byte count that produced it.

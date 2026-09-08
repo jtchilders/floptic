@@ -147,8 +147,9 @@ void write_markdown_report(const Report& report, const std::string& output_path)
         out << "|--------|-----------|------|--------|------|-------|-------------|\n";
 
         for (auto* e : by_device[dev.id]) {
-            std::string status_str = benchmark_status_to_string(e->result.status);
-            bool is_ok = (e->result.status == BenchmarkStatus::OK);
+            BenchmarkStatus status = resolve_status_for_serialization(e->result.status);
+            std::string status_str = benchmark_status_to_string(status);
+            bool is_ok = (status == BenchmarkStatus::OK);
 
             // Typed metric drives rendering — never category-based unit
             // guessing. Non-OK statuses render explicitly instead of a

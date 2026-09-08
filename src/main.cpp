@@ -398,7 +398,7 @@ int main(int argc, char* argv[]) {
             // Format rate using the typed metric's own unit — never
             // category-based guessing. Non-OK statuses render an explicit
             // status marker instead of a fabricated zero-performance rate.
-            bool is_ok = (e->result.status == BenchmarkStatus::OK);
+            bool is_ok = (resolve_status_for_serialization(e->result.status) == BenchmarkStatus::OK);
             char rate_buf[24];
             if (is_ok) {
                 double val = e->result.metric.rate_per_second;
@@ -420,7 +420,8 @@ int main(int argc, char* argv[]) {
 
                 snprintf(rate_buf, sizeof(rate_buf), "%7.1f %c%s", scaled, prefix, unit.c_str());
             } else {
-                snprintf(rate_buf, sizeof(rate_buf), "%16s", benchmark_status_to_string(e->result.status).c_str());
+                snprintf(rate_buf, sizeof(rate_buf), "%16s",
+                         benchmark_status_to_string(resolve_status_for_serialization(e->result.status)).c_str());
             }
 
             // Format peak%

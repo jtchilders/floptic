@@ -31,13 +31,17 @@ struct KernelResult {
     // status == OK; other statuses render explicitly rather than as zero
     // performance (see benchmark_status.hpp).
     //
-    // Defaults to a non-success state (FAILED) rather than OK. Status must
-    // be authoritative and never inferred from a nonpositive legacy rate —
-    // see floptic/dispatch_normalize.hpp, which is the single place that
-    // promotes an unmigrated kernel's default-FAILED result to OK once it
-    // has produced a valid nonzero legacy/typed measurement. A kernel that
-    // sets its own explicit status (e.g. VALIDATION_FAILED) is left as-is.
-    BenchmarkStatus status = BenchmarkStatus::FAILED;
+    // Defaults to UNSET — an internal-only sentinel, never a public status
+    // — rather than FAILED or OK. UNSET means "this kernel has not yet
+    // reported anything"; it is distinct from an explicit FAILED, which a
+    // kernel sets deliberately (validation/launch/API failure) and which
+    // must never be silently promoted to OK. See
+    // floptic/dispatch_normalize.hpp, the single place that resolves UNSET
+    // to OK (valid nonzero legacy/typed measurement present) or FAILED (no
+    // measurement present) at the dispatch boundary. A kernel that sets its
+    // own explicit status (OK, FAILED, VALIDATION_FAILED, UNSUPPORTED,
+    // NOT_REQUESTED) is left as-is; UNSET must never reach a serializer.
+    BenchmarkStatus status = BenchmarkStatus::UNSET;
 
     // Timing
     double median_time_ms = 0.0;

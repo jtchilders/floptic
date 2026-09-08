@@ -13,11 +13,13 @@ namespace floptic {
 // tests/test_dispatch_normalize.cpp for the required coverage:
 //   - actual byte counts for memory kernels (not the FLOP count reused as
 //     a byte count)
-//   - status left authoritative: FAILED is the KernelResult default, and
-//     this function only ever promotes FAILED -> OK on evidence of a valid
-//     measurement; it never infers failure from a nonpositive rate, and it
-//     never touches an already-explicit non-FAILED status (UNSUPPORTED,
-//     NOT_REQUESTED, VALIDATION_FAILED, or an already-OK result).
+//   - status left authoritative: KernelResult defaults to the internal-only
+//     UNSET sentinel (never FAILED), and this function only ever resolves
+//     UNSET -> OK (valid measurement present) or UNSET -> FAILED (no
+//     measurement present). It never touches an already-explicit status —
+//     OK, FAILED, UNSUPPORTED, NOT_REQUESTED, or VALIDATION_FAILED are all
+//     left exactly as the kernel set them, even if the legacy rate happens
+//     to be positive. UNSET must never reach a serializer.
 //   - arithmetic convention populated for applicable kernel semantics
 //     (FMA/MAC-based compute; empty for byte-transfer kernels).
 inline void normalize_dispatch_result(KernelResult& result,
@@ -44,14 +46,18 @@ inline void normalize_dispatch_result(KernelResult& result,
     }
 
     // Status is authoritative and must never be derived from a nonpositive
-    // legacy rate. KernelResult::status defaults to FAILED (a non-success
-    // sentinel); the only transition this boundary performs is promoting
-    // that default to OK once a valid, nonzero measurement exists. Any
-    // status other than the default FAILED (OK already, UNSUPPORTED,
-    // NOT_REQUESTED, VALIDATION_FAILED) was set explicitly by the kernel
-    // and is left exactly as-is.
-    if (result.status == BenchmarkStatus::FAILED && result.metric.rate_per_second > 0.0) {
-        result.status = BenchmarkStatus::OK;
+    // legacy rate. KernelResult::status defaults to the internal-only UNSET
+    // sentinel — distinct from an explicit FAILED — so this is the only
+    // place that resolves "kernel reported nothing" into a public status:
+    // UNSET is promoted to OK once a valid, nonzero measurement exists, and
+    // otherwise resolved to FAILED. Any status other than UNSET (OK,
+    // FAILED, UNSUPPORTED, NOT_REQUESTED, VALIDATION_FAILED) was set
+    // explicitly by the kernel and is left exactly as-is, even if the
+    // legacy rate is positive.
+    if (result.status == BenchmarkStatus::UNSET) {
+        result.status = (result.metric.rate_per_second > 0.0)
+                             ? BenchmarkStatus::OK
+                             : BenchmarkStatus::FAILED;
     }
 }
 

@@ -52,15 +52,28 @@ void test_memory_kernel_with_zero_total_bytes_reports_zero_not_flops() {
 // Status is authoritative: never inferred from a nonpositive legacy rate.
 // ---------------------------------------------------------------------
 
-void test_default_result_status_is_failed_not_ok() {
-    // KernelResult's own default must be a non-success sentinel, not OK —
-    // otherwise a kernel that forgets to report anything silently looks
-    // like a successful zero-performance result.
+void test_default_result_status_is_unset_not_ok_or_failed() {
+    // KernelResult's own default must be the internal-only UNSET sentinel —
+    // not OK (which would silently look like a successful zero-performance
+    // result) and not FAILED (which would be indistinguishable from a
+    // kernel that explicitly reported failure). Only
+    // normalize_dispatch_result resolves UNSET into a public status.
     KernelResult r;
+    CHECK_TRUE(r.status == BenchmarkStatus::UNSET);
+}
+
+void test_empty_default_result_is_failed_after_normalization() {
+    // A default-constructed result (no measurement at all) must resolve to
+    // FAILED once it passes through the dispatch boundary — the required
+    // "empty/default result after normalization must be FAILED" behavior.
+    KernelResult r;
+
+    floptic::normalize_dispatch_result(r, "scalar", Precision::FP64);
+
     CHECK_TRUE(r.status == BenchmarkStatus::FAILED);
 }
 
-void test_valid_measurement_promotes_default_failed_to_ok() {
+void test_valid_measurement_promotes_default_unset_to_ok() {
     KernelResult r;
     r.gflops = 244.2;
     r.total_flops = 1000;
@@ -70,10 +83,11 @@ void test_valid_measurement_promotes_default_failed_to_ok() {
     CHECK_TRUE(r.status == BenchmarkStatus::OK);
 }
 
-void test_zero_rate_result_status_stays_failed_not_inferred_from_rate() {
+void test_zero_rate_result_status_becomes_failed_not_inferred_from_rate() {
     // A kernel that produced no valid measurement (gflops == 0, metric
-    // untouched) must remain FAILED — this is a status-driven decision,
-    // not a "gflops <= 0" inference recomputed here.
+    // untouched) must resolve to FAILED — this is a status-driven decision
+    // (UNSET with no positive rate), not a "gflops <= 0" inference
+    // recomputed here.
     KernelResult r;
     r.gflops = 0.0;
     r.total_flops = 0;
@@ -96,6 +110,41 @@ void test_explicit_non_failed_status_is_left_untouched() {
     floptic::normalize_dispatch_result(r, "scalar", Precision::FP64);
 
     CHECK_TRUE(r.status == BenchmarkStatus::VALIDATION_FAILED);
+}
+
+void test_explicit_failed_with_positive_typed_metric_stays_failed() {
+    // Reviewer-reported logic error: BenchmarkStatus::FAILED was overloaded
+    // as both the "unmigrated legacy kernel" sentinel and an explicit
+    // failure. A kernel that already populated its typed metric directly
+    // (rate_per_second != 0) AND explicitly reported FAILED (e.g. a
+    // validation or launch failure discovered after the measurement was
+    // taken) must not be promoted to OK just because the metric happens to
+    // be positive.
+    KernelResult r;
+    r.status = BenchmarkStatus::FAILED;
+    r.metric.kind = MetricKind::FLOATING_POINT_OPERATIONS;
+    r.metric.rate_per_second = 244.2e9;
+    r.metric.operation_count = 1000;
+
+    floptic::normalize_dispatch_result(r, "scalar", Precision::FP64);
+
+    CHECK_TRUE(r.status == BenchmarkStatus::FAILED);
+}
+
+void test_explicit_failed_with_positive_legacy_gflops_stays_failed() {
+    // Same defect via the legacy (unmigrated) path: a kernel that sets
+    // BenchmarkStatus::FAILED explicitly but also happens to leave a
+    // positive legacy gflops value (e.g. it measured something before
+    // detecting the failure) must not have that explicit FAILED promoted
+    // to OK by the dispatch boundary.
+    KernelResult r;
+    r.status = BenchmarkStatus::FAILED;
+    r.gflops = 244.2;
+    r.total_flops = 1000;
+
+    floptic::normalize_dispatch_result(r, "scalar", Precision::FP64);
+
+    CHECK_TRUE(r.status == BenchmarkStatus::FAILED);
 }
 
 void test_kernel_that_already_set_ok_and_metric_is_left_untouched() {
@@ -157,10 +206,13 @@ void test_memory_kernel_has_no_arithmetic_convention() {
 int main() {
     test_memory_kernel_uses_total_bytes_not_total_flops();
     test_memory_kernel_with_zero_total_bytes_reports_zero_not_flops();
-    test_default_result_status_is_failed_not_ok();
-    test_valid_measurement_promotes_default_failed_to_ok();
-    test_zero_rate_result_status_stays_failed_not_inferred_from_rate();
+    test_default_result_status_is_unset_not_ok_or_failed();
+    test_empty_default_result_is_failed_after_normalization();
+    test_valid_measurement_promotes_default_unset_to_ok();
+    test_zero_rate_result_status_becomes_failed_not_inferred_from_rate();
     test_explicit_non_failed_status_is_left_untouched();
+    test_explicit_failed_with_positive_typed_metric_stays_failed();
+    test_explicit_failed_with_positive_legacy_gflops_stays_failed();
     test_kernel_that_already_set_ok_and_metric_is_left_untouched();
     test_floating_point_kernel_gets_fma_arithmetic_convention();
     test_integer_kernel_gets_mac_arithmetic_convention();

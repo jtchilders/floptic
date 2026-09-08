@@ -32,6 +32,29 @@ add_executable(test_axpy_kernel test_axpy_kernel.cpp)
 target_link_libraries(test_axpy_kernel PRIVATE floptic_core)
 add_test(NAME axpy_kernel COMMAND test_axpy_kernel)
 
+# Deterministic operand generation: fixed PRNG known outputs, seed
+# reproducibility, production-distribution range/finiteness, invalid-config
+# rejection. Header-only (floptic/prng.hpp, floptic/operand_gen.hpp), no
+# device discovery.
+add_executable(test_operand_gen test_operand_gen.cpp)
+target_link_libraries(test_operand_gen PRIVATE floptic_core)
+add_test(NAME operand_gen COMMAND test_operand_gen)
+
+# Untimed host reference GEMM: hand-computed rectangular alpha/beta cases,
+# transposed-operand equivalence, dimension/size-mismatch rejection.
+# Header-only (floptic/reference_gemm.hpp).
+add_executable(test_reference_gemm test_reference_gemm.cpp)
+target_link_libraries(test_reference_gemm PRIVATE floptic_core)
+add_test(NAME reference_gemm COMMAND test_reference_gemm)
+
+# Validation metrics + precision/depth-aware policies: exact match,
+# controlled perturbations, NaN/Inf visibility, near-zero relative-error
+# floor, policy ordering across precisions, integer exactness and
+# overflow-bound checks. Header-only (floptic/validation_metrics.hpp).
+add_executable(test_validation_metrics test_validation_metrics.cpp)
+target_link_libraries(test_validation_metrics PRIVATE floptic_core)
+add_test(NAME validation_metrics COMMAND test_validation_metrics)
+
 # Executable-level smoke test: drives the real `floptic` binary (not just
 # the parser/test-double unit tests) to cover exit-code and stdout/stderr
 # behavior end-to-end. CPU-only, kept fast via trials=1 / small inner-iters.

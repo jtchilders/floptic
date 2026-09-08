@@ -142,7 +142,7 @@ A published Floptic result must establish all of the following:
 - [ ] Add peak-model fixtures for representative NVIDIA, AMD, and CPU architectures.
 - [ ] Add operation-count and typed-unit tests.
 - [ ] Add JSON schema and Markdown unit tests.
-- [ ] Add deterministic operand-generation and validation-policy tests.
+- [x] Add deterministic operand-generation and validation-policy tests.
 - [x] Add CPU scalar/SIMD numerical tests and serial/OpenMP accounting tests.
 - [ ] Register hardware-independent compile tests for CUDA/HIP code where toolkits are available.
 - [ ] Add hardware smoke tests on representative NVIDIA and AMD systems when runners are available.

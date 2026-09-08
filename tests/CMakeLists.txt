@@ -55,6 +55,22 @@ add_executable(test_validation_metrics test_validation_metrics.cpp)
 target_link_libraries(test_validation_metrics PRIVATE floptic_core)
 add_test(NAME validation_metrics COMMAND test_validation_metrics)
 
+# Typed metric representation (schema v2): enum string values, legacy
+# normalization, and the centralized kernel-semantics mapping used at the
+# dispatch boundary. Header-only (floptic/typed_metric.hpp,
+# floptic/benchmark_status.hpp).
+add_executable(test_typed_metric test_typed_metric.cpp)
+target_link_libraries(test_typed_metric PRIVATE floptic_core)
+add_test(NAME typed_metric COMMAND test_typed_metric)
+
+# Report schema v2: JSON schema_version, typed metric serialization
+# (FLOP/s, OP/s, B/s), explicit status retention (failed/validation_failed
+# not omitted), legacy compatibility field naming, and Markdown rendering
+# driven by the typed metric rather than category-based unit guessing.
+add_executable(test_report_schema test_report_schema.cpp)
+target_link_libraries(test_report_schema PRIVATE floptic_core)
+add_test(NAME report_schema COMMAND test_report_schema)
+
 # Executable-level smoke test: drives the real `floptic` binary (not just
 # the parser/test-double unit tests) to cover exit-code and stdout/stderr
 # behavior end-to-end. CPU-only, kept fast via trials=1 / small inner-iters.

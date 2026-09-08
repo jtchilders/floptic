@@ -23,6 +23,7 @@ static std::string get_timestamp() {
 nlohmann::json report_to_json(const Report& report) {
     nlohmann::json j;
 
+    j["schema_version"] = 2;
     j["floptic_version"] = report.version;
     j["timestamp"] = report.timestamp.empty() ? get_timestamp() : report.timestamp;
 
@@ -83,8 +84,32 @@ nlohmann::json report_to_json(const Report& report) {
         b["category"] = entry.category;
         b["precision"] = entry.precision;
         b["mode"] = entry.mode;
+        b["status"] = benchmark_status_to_string(entry.result.status);
 
-        b["results"]["gflops"] = entry.result.gflops;
+        // Typed primary metric (schema v2): stable kind, base SI unit,
+        // rate, and the explicit operation/byte count that produced it.
+        // Never inferred from category here — the value already carries
+        // the caller-provided kind from the dispatch boundary.
+        {
+            const auto& m = entry.result.metric;
+            nlohmann::json metric_json;
+            metric_json["kind"] = metric_kind_to_string(m.kind);
+            metric_json["unit"] = metric_unit_for_kind(m.kind);
+            metric_json["rate_per_second"] = m.rate_per_second;
+            if (m.kind == MetricKind::TRANSFERRED_BYTES) {
+                metric_json["byte_count"] = m.byte_count;
+            } else {
+                metric_json["operation_count"] = m.operation_count;
+            }
+            if (!m.arithmetic_convention.empty()) {
+                metric_json["arithmetic_convention"] = m.arithmetic_convention;
+            }
+            b["results"]["metric"] = metric_json;
+        }
+
+        // Legacy compatibility field only — never the authoritative
+        // results.gflops. Retained temporarily per TODO.md P1 migration.
+        b["results"]["legacy_gflops"] = entry.result.gflops;
         b["results"]["effective_gflops"] = entry.result.effective_gflops;
         b["results"]["peak_percent"] = entry.result.peak_percent;
         b["results"]["median_time_ms"] = entry.result.median_time_ms;

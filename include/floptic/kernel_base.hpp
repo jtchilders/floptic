@@ -5,6 +5,8 @@
 #include <cstdint>
 #include "floptic/precision.hpp"
 #include "floptic/device_info.hpp"
+#include "floptic/benchmark_status.hpp"
+#include "floptic/typed_metric.hpp"
 
 namespace floptic {
 
@@ -25,12 +27,28 @@ struct KernelConfig {
 };
 
 struct KernelResult {
+    // Explicit benchmark outcome. Everything below is only meaningful when
+    // status == OK; other statuses render explicitly rather than as zero
+    // performance (see benchmark_status.hpp).
+    BenchmarkStatus status = BenchmarkStatus::OK;
+
     // Timing
     double median_time_ms = 0.0;
     double min_time_ms = 0.0;
     double max_time_ms = 0.0;
 
-    // Performance
+    // Typed primary metric (schema v2). This is the authoritative
+    // performance representation; gflops/effective_gflops below remain
+    // only as deprecated in-memory compatibility fields for callers that
+    // have not migrated in this card.
+    TypedMetric metric;
+
+    // Performance (DEPRECATED: retained temporarily as in-memory
+    // compatibility fields so existing kernels do not need per-kernel
+    // migration in this card. Do not add new readers of these — read
+    // `metric` instead. Serializers must emit these only as a clearly
+    // named legacy field (`legacy_gflops`), never as an authoritative
+    // `results.gflops`.)
     double gflops = 0.0;
     double effective_gflops = 0.0;  // same as gflops for native precisions
     double peak_percent = 0.0;

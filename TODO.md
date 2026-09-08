@@ -33,7 +33,7 @@ A published Floptic result must establish all of the following:
   - Replace print-only CUDA, HIP, cuBLAS, cuBLASLt, rocBLAS, and hipBLASLt checks with propagated status.
   - Check every allocation, descriptor, event, launch, synchronization, and library call.
   - Return a nonzero process status when a requested benchmark has no valid result.
-- [ ] Distinguish benchmark states in reports: `ok`, `unsupported`, `failed`, `not_requested`, and `validation_failed`.
+- [x] Distinguish benchmark states in reports: `ok`, `unsupported`, `failed`, `not_requested`, and `validation_failed`.
 - [ ] Fix CPU work accounting when OpenMP is unavailable.
   - Effective thread count must be one for serial builds.
   - Reject or clearly downgrade requests for multiple CPU threads without a parallel runtime.
@@ -41,11 +41,11 @@ A published Floptic result must establish all of the following:
 
 ## P1 — Reproducibility and metric semantics
 
-- [ ] Replace the overloaded `gflops` field with a typed metric representation.
+- [x] Replace the overloaded `gflops` field with a typed metric representation.
   - Kinds: floating-point operations, integer operations, and transferred bytes.
   - Units: base SI rate plus display formatting; no bandwidth stored as “GFLOP/s.”
   - Preserve a documented compatibility field for one schema transition if needed.
-- [ ] Add a versioned JSON schema and validate generated reports in tests.
+- [x] Add a versioned JSON schema and validate generated reports in tests.
 - [ ] Record complete run provenance:
   - Git commit and dirty state.
   - Compiler identity, version, and effective flags.
@@ -140,8 +140,8 @@ A published Floptic result must establish all of the following:
 - [ ] Enable CTest and add CPU-only unit/integration tests.
 - [ ] Add tests for CLI parsing, rejection paths, selection/deduplication, and exit status.
 - [ ] Add peak-model fixtures for representative NVIDIA, AMD, and CPU architectures.
-- [ ] Add operation-count and typed-unit tests.
-- [ ] Add JSON schema and Markdown unit tests.
+- [x] Add operation-count and typed-unit tests.
+- [x] Add JSON schema and Markdown unit tests.
 - [x] Add deterministic operand-generation and validation-policy tests.
 - [x] Add CPU scalar/SIMD numerical tests and serial/OpenMP accounting tests.
 - [ ] Register hardware-independent compile tests for CUDA/HIP code where toolkits are available.

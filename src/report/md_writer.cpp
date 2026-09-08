@@ -1,4 +1,6 @@
 #include "floptic/report.hpp"
+#include "floptic/benchmark_status.hpp"
+#include "floptic/typed_metric.hpp"
 #include <iostream>
 #include <fstream>
 #include <cstdio>
@@ -141,15 +143,24 @@ void write_markdown_report(const Report& report, const std::string& output_path)
 
         // Results table
         out << "### Benchmark Results\n\n";
-        out << "| Kernel | Precision | Mode | Rate | Peak% | Median (ms) |\n";
-        out << "|--------|-----------|------|------|-------|-------------|\n";
+        out << "| Kernel | Precision | Mode | Status | Rate | Peak% | Median (ms) |\n";
+        out << "|--------|-----------|------|--------|------|-------|-------------|\n";
 
         for (auto* e : by_device[dev.id]) {
-            bool is_memory = (e->category == "memory");
-            std::string rate = format_rate(e->result.gflops, is_memory);
+            std::string status_str = benchmark_status_to_string(e->result.status);
+            bool is_ok = (e->result.status == BenchmarkStatus::OK);
+
+            // Typed metric drives rendering — never category-based unit
+            // guessing. Non-OK statuses render explicitly instead of a
+            // fabricated zero-performance rate.
+            std::string rate = is_ok ? format_metric_rate(e->result.metric) : "—";
 
             char peak_buf[16];
-            snprintf(peak_buf, sizeof(peak_buf), "%.1f%%", e->result.peak_percent);
+            if (is_ok) {
+                snprintf(peak_buf, sizeof(peak_buf), "%.1f%%", e->result.peak_percent);
+            } else {
+                snprintf(peak_buf, sizeof(peak_buf), "—");
+            }
 
             char time_buf[16];
             snprintf(time_buf, sizeof(time_buf), "%.3f", e->result.median_time_ms);
@@ -157,6 +168,7 @@ void write_markdown_report(const Report& report, const std::string& output_path)
             out << "| " << e->kernel_name
                 << " | " << e->precision
                 << " | " << e->mode
+                << " | " << status_str
                 << " | " << rate
                 << " | " << peak_buf
                 << " | " << time_buf

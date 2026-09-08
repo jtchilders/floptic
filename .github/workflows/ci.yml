@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  cpu-only:
+    name: ${{ matrix.compiler }} CPU-only build + test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+          - compiler: clang
+            cc: clang
+            cxx: clang++
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ${{ matrix.compiler == 'clang' && 'clang' || 'g++' }}
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: >
+          cmake -S . -B build-test
+          -DFLOPTIC_ENABLE_CUDA=OFF
+          -DFLOPTIC_ENABLE_HIP=OFF
+          -DFLOPTIC_BUILD_TESTS=ON
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-test -j "$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build-test --output-on-failure
+
+      - name: Smoke test --list
+        run: ./build-test/floptic --list

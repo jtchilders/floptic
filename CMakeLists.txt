@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # --- Options ---
 option(FLOPTIC_ENABLE_CUDA "Enable CUDA backend" ON)
 option(FLOPTIC_ENABLE_HIP  "Enable HIP backend"  OFF)
+option(FLOPTIC_BUILD_TESTS "Build CTest unit tests" ON)
 
 # --- Backend Detection ---
 include(cmake/DetectBackends.cmake)
@@ -16,11 +17,22 @@ include(cmake/CompilerFlags.cmake)
 
 # --- nlohmann/json (header-only) ---
 include(FetchContent)
-FetchContent_Declare(
-    json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.11.3
-)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
+    # SYSTEM marks the dependency's include dirs as -isystem for consumers,
+    # so its own warnings never surface (or fail) inside project builds.
+    FetchContent_Declare(
+        json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG        v3.11.3
+        SYSTEM
+    )
+else()
+    FetchContent_Declare(
+        json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG        v3.11.3
+    )
+endif()
 FetchContent_MakeAvailable(json)
 
 # --- Core library (always built) ---
@@ -170,5 +182,12 @@ message(STATUS "  Version:    ${PROJECT_VERSION}")
 message(STATUS "  CUDA:       ${FLOPTIC_HAS_CUDA}")
 message(STATUS "  HIP:        ${FLOPTIC_HAS_HIP}")
 message(STATUS "  OpenMP:     ${OpenMP_CXX_FOUND}")
+message(STATUS "  Tests:      ${FLOPTIC_BUILD_TESTS}")
 message(STATUS "===================================")
 message(STATUS "")
+
+# --- Tests ---
+if(FLOPTIC_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

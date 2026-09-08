@@ -87,6 +87,13 @@ nlohmann::json report_to_json(const Report& report) {
         b["status"] = benchmark_status_to_string(
             resolve_status_for_serialization(entry.result.status));
 
+        // Concise diagnostic for a non-OK status (see kernel_base.hpp);
+        // omitted entirely rather than emitted as an empty string when
+        // there is nothing to report.
+        if (!entry.result.diagnostic.empty()) {
+            b["diagnostic"] = entry.result.diagnostic;
+        }
+
         // Typed primary metric (schema v2): stable kind, base SI unit,
         // rate, and the explicit operation/byte count that produced it.
         // Never inferred from category here — the value already carries

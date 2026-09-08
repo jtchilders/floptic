@@ -174,6 +174,13 @@ void write_markdown_report(const Report& report, const std::string& output_path)
                 << " | " << peak_buf
                 << " | " << time_buf
                 << " |\n";
+
+            // Surface the diagnostic for a non-OK result directly in the
+            // report (not just stderr at run time) so a failed/
+            // validation_failed row is debuggable on its own.
+            if (!e->result.diagnostic.empty()) {
+                out << "  - Diagnostic: " << e->result.diagnostic << "\n";
+            }
         }
         out << "\n";
 

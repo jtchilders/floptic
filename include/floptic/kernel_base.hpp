@@ -43,6 +43,15 @@ struct KernelResult {
     // NOT_REQUESTED) is left as-is; UNSET must never reach a serializer.
     BenchmarkStatus status = BenchmarkStatus::UNSET;
 
+    // Concise diagnostic for a non-OK status (e.g. the caught exception's
+    // message from floptic/kernel_invoke.hpp, or a validation-failure
+    // reason). Empty for OK/UNSET/NOT_REQUESTED results that never had a
+    // failure to explain. Serializers (json_writer.cpp, md_writer.cpp)
+    // must include this whenever it is nonempty so a failed result is
+    // debuggable directly from the report, not just from stderr at run
+    // time.
+    std::string diagnostic;
+
     // Timing
     double median_time_ms = 0.0;
     double min_time_ms = 0.0;

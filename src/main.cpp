@@ -5,10 +5,13 @@
 #include "floptic/benchmark_status.hpp"
 #include "floptic/typed_metric.hpp"
 #include "floptic/dispatch_normalize.hpp"
+#include "floptic/kernel_invoke.hpp"
+#include "floptic/run_outcome.hpp"
 #include <iostream>
 #include <algorithm>
 #include <map>
 #include <set>
+#include <vector>
 #include <cstdio>
 
 // Force-link kernel translation units from static libraries.
@@ -303,7 +306,9 @@ int main(int argc, char* argv[]) {
                                   << precision_to_string(precision) << " | "
                                   << mode << " ---" << std::endl;
 
-                        auto result = kernel->run(config, device, opts.trials);
+                        auto result = invoke_kernel_safely([&]() -> KernelResult {
+                            return kernel->run(config, device, opts.trials);
+                        });
 
                         // Normalize legacy gflops/effective_gflops/
                         // total_flops/total_bytes fields into a typed
@@ -468,6 +473,27 @@ int main(int argc, char* argv[]) {
 
     // Write markdown report if --output-md was specified
     write_markdown_report(report, opts.output_md_path);
+
+    // Aggregate exit-code decision (TODO.md "Return a nonzero process
+    // status when a requested benchmark has no valid result"): computed
+    // from every requested benchmark's resolved (serialization-ready)
+    // status, using the centralized, independently-tested mapping in
+    // run_outcome.hpp — see tests/test_run_outcome.cpp for the required
+    // coverage (all-OK success, any FAILED/VALIDATION_FAILED failure,
+    // unsupported-only/no-success failure, mixed OK+unsupported success).
+    // This runs after report output so reports are always written
+    // regardless of the final exit code.
+    std::vector<BenchmarkStatus> resolved_statuses;
+    resolved_statuses.reserve(report.benchmarks.size());
+    for (auto& e : report.benchmarks) {
+        resolved_statuses.push_back(resolve_status_for_serialization(e.result.status));
+    }
+    if (run_has_failure_exit(resolved_statuses)) {
+        std::cerr << "ERROR: one or more requested benchmarks did not produce "
+                     "a valid result (failed/validation_failed, or nothing "
+                     "succeeded) — exiting nonzero." << std::endl;
+        return 1;
+    }
 
     return 0;
 }

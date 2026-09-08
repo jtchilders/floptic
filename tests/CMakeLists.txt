@@ -80,6 +80,23 @@ add_executable(test_dispatch_normalize test_dispatch_normalize.cpp)
 target_link_libraries(test_dispatch_normalize PRIVATE floptic_core)
 add_test(NAME dispatch_normalize COMMAND test_dispatch_normalize)
 
+# Kernel invocation failure boundary (floptic/kernel_invoke.hpp): a thrown
+# std::exception or unknown exception from a kernel/callable must become
+# an explicit FAILED KernelResult with a diagnostic instead of propagating
+# and aborting the whole run; a successful callable's result must pass
+# through unmodified. Header-only, no device discovery.
+add_executable(test_kernel_invoke test_kernel_invoke.cpp)
+target_link_libraries(test_kernel_invoke PRIVATE floptic_core)
+add_test(NAME kernel_invoke COMMAND test_kernel_invoke)
+
+# Aggregate run-exit-code decision (floptic/run_outcome.hpp): all-OK is
+# success, any FAILED/VALIDATION_FAILED is failure, unsupported-only/no-
+# success is failure, and mixed OK+unsupported is success. Header-only,
+# no device discovery.
+add_executable(test_run_outcome test_run_outcome.cpp)
+target_link_libraries(test_run_outcome PRIVATE floptic_core)
+add_test(NAME run_outcome COMMAND test_run_outcome)
+
 # Executable-level smoke test: drives the real `floptic` binary (not just
 # the parser/test-double unit tests) to cover exit-code and stdout/stderr
 # behavior end-to-end. CPU-only, kept fast via trials=1 / small inner-iters.

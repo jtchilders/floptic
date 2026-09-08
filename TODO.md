@@ -32,7 +32,7 @@ A published Floptic result must establish all of the following:
 - [ ] Make GPU/runtime/library errors invalidate a trial.
   - Replace print-only CUDA, HIP, cuBLAS, cuBLASLt, rocBLAS, and hipBLASLt checks with propagated status.
   - Check every allocation, descriptor, event, launch, synchronization, and library call.
-  - Return a nonzero process status when a requested benchmark has no valid result.
+  - [x] Return a nonzero process status when a requested benchmark has no valid result.
 - [x] Distinguish benchmark states in reports: `ok`, `unsupported`, `failed`, `not_requested`, and `validation_failed`.
 - [ ] Fix CPU work accounting when OpenMP is unavailable.
   - Effective thread count must be one for serial builds.

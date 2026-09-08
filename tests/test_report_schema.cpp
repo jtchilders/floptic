@@ -206,6 +206,45 @@ void test_markdown_renders_non_ok_status_explicitly() {
     CHECK_TRUE(content.find("0.0 FLOP/s") == std::string::npos);
 }
 
+// ---------------------------------------------------------------------
+// Diagnostic string for failed results: JSON and Markdown must both
+// surface it so a failed/validation_failed entry is debuggable from the
+// report alone, not just from stderr at run time.
+// ---------------------------------------------------------------------
+
+void test_json_includes_diagnostic_for_failed_result() {
+    Report report;
+    auto entry = make_entry("scalar_fma", "scalar", BenchmarkStatus::FAILED,
+                             MetricKind::FLOATING_POINT_OPERATIONS, 0.0, 0);
+    entry.result.diagnostic = "std::runtime_error: launch failed";
+    report.benchmarks.push_back(entry);
+
+    auto j = floptic::report_to_json(report);
+    CHECK_TRUE(j["benchmarks"][0].contains("diagnostic"));
+    CHECK_EQ(j["benchmarks"][0]["diagnostic"].get<std::string>(),
+             std::string("std::runtime_error: launch failed"));
+}
+
+void test_markdown_includes_diagnostic_for_failed_result() {
+    Report report;
+    report.devices.push_back(floptic::DeviceInfo{});
+    report.devices[0].id = "cpu:0";
+    report.devices[0].name = "Test CPU";
+    report.devices[0].type = "cpu";
+
+    auto entry = make_entry("broken_kernel", "scalar", BenchmarkStatus::FAILED,
+                             MetricKind::FLOATING_POINT_OPERATIONS, 0.0, 0);
+    entry.result.diagnostic = "unknown exception during kernel execution";
+    report.benchmarks.push_back(entry);
+
+    std::string path = "test_markdown_diagnostic_output.md";
+    floptic::write_markdown_report(report, path);
+    std::string content = read_file_contents(path);
+    std::remove(path.c_str());
+
+    CHECK_TRUE(content.find("unknown exception during kernel execution") != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -217,5 +256,7 @@ int main() {
     test_json_uses_legacy_gflops_not_ambiguous_gflops_key();
     test_markdown_uses_typed_metric_not_category_guess();
     test_markdown_renders_non_ok_status_explicitly();
+    test_json_includes_diagnostic_for_failed_result();
+    test_markdown_includes_diagnostic_for_failed_result();
     return floptic_test::finish();
 }

@@ -187,6 +187,7 @@ bool parse_and_validate_precisions(const std::string& raw_value,
 bool parse_int_option(const std::string& flag_name,
                        const std::string& raw_value,
                        long min_value,
+                       long max_value,
                        const char* range_description,
                        int& out,
                        std::vector<std::string>& errors) {
@@ -195,7 +196,7 @@ bool parse_int_option(const std::string& flag_name,
         errors.push_back(flag_name + ": invalid integer value '" + raw_value + "'");
         return false;
     }
-    if (val < min_value || val > std::numeric_limits<int>::max()) {
+    if (val < min_value || val > max_value) {
         errors.push_back(flag_name + ": value " + std::to_string(val) +
                           " out of range (" + range_description + ")");
         return false;
@@ -203,6 +204,21 @@ bool parse_int_option(const std::string& flag_name,
     out = static_cast<int>(val);
     return true;
 }
+
+// ---------------------------------------------------------------------
+// Generic resource safety ceilings.
+//
+// These are parser-level portability/sanity ceilings only — they exist so
+// that clearly-nonsensical values (e.g. INT_MAX threads) are rejected
+// before device discovery runs. They are deliberately generous defaults
+// that should be safe on essentially any real CPU or GPU; a specific
+// device may enforce a materially stricter effective limit later (e.g. a
+// GPU's actual max threads-per-block), which is a separate, device-aware
+// check, not the concern of this generic CLI boundary.
+constexpr long kMaxCpuThreads = 65536;      // generous ceiling on OS threads
+constexpr long kMaxGpuBlocks = 1048576;     // generous ceiling on grid size
+constexpr long kMaxGpuThreadsPerBlock = 1024;  // widest real GPU limit today
+constexpr long kMaxGpuBlocksPerSm = 64;     // generous ceiling on blocks/SM
 
 } // namespace
 
@@ -221,10 +237,10 @@ void print_usage(const char* progname) {
               << "  --output=<PATH>      Output file (default: stdout for --report=stdout, otherwise none)\n"
               << "  --output-md=<PATH>   Write markdown results report to file\n"
               << "\nThread control:\n"
-              << "  --cpu-threads=<N>    CPU threads (N >= 0; 0 = auto, default: 0)\n"
-              << "  --gpu-blocks=<N>     GPU thread blocks (N >= 0; 0 = auto = blocks-per-sm x SMs)\n"
-              << "  --gpu-tpb=<N>        GPU threads per block (N > 0, default: 256)\n"
-              << "  --gpu-bpsm=<N>       GPU blocks per SM (N > 0, default: 4, used when --gpu-blocks=0)\n"
+              << "  --cpu-threads=<N>    CPU threads (0 <= N <= 65536; 0 = auto, default: 0)\n"
+              << "  --gpu-blocks=<N>     GPU thread blocks (0 <= N <= 1048576; 0 = auto = blocks-per-sm x SMs)\n"
+              << "  --gpu-tpb=<N>        GPU threads per block (0 < N <= 1024, default: 256)\n"
+              << "  --gpu-bpsm=<N>       GPU blocks per SM (0 < N <= 64, default: 4, used when --gpu-blocks=0)\n"
               << "\nOther:\n"
               << "  --list               List available kernels and exit\n"
               << "  --info               Print device info and exit\n"
@@ -275,11 +291,14 @@ CliOptions parse_args(int argc, char* argv[]) {
                 opts.kernel_name = name;
             }
         } else if (arg.rfind("--trials=", 0) == 0) {
-            parse_int_option("--trials", arg.substr(9), 1, "must be > 0", opts.trials, errors);
+            parse_int_option("--trials", arg.substr(9), 1, std::numeric_limits<int>::max(),
+                              "must be > 0", opts.trials, errors);
         } else if (arg.rfind("--inner-iters=", 0) == 0) {
-            parse_int_option("--inner-iters", arg.substr(14), 1, "must be > 0", opts.inner_iters, errors);
+            parse_int_option("--inner-iters", arg.substr(14), 1, std::numeric_limits<int>::max(),
+                              "must be > 0", opts.inner_iters, errors);
         } else if (arg.rfind("--warmup=", 0) == 0) {
-            parse_int_option("--warmup", arg.substr(9), 0, "must be >= 0", opts.warmup, errors);
+            parse_int_option("--warmup", arg.substr(9), 0, std::numeric_limits<int>::max(),
+                              "must be >= 0", opts.warmup, errors);
         } else if (arg.rfind("--report=", 0) == 0) {
             std::string fmt = arg.substr(9);
             if (!is_valid_report_format(fmt)) {
@@ -293,17 +312,17 @@ CliOptions parse_args(int argc, char* argv[]) {
         } else if (arg.rfind("--output-md=", 0) == 0) {
             opts.output_md_path = arg.substr(12);
         } else if (arg.rfind("--cpu-threads=", 0) == 0) {
-            parse_int_option("--cpu-threads", arg.substr(14), 0, "must be >= 0 (0=auto)",
-                              opts.cpu_threads, errors);
+            parse_int_option("--cpu-threads", arg.substr(14), 0, kMaxCpuThreads,
+                              "must be >= 0 (0=auto) and <= 65536", opts.cpu_threads, errors);
         } else if (arg.rfind("--gpu-blocks=", 0) == 0) {
-            parse_int_option("--gpu-blocks", arg.substr(13), 0, "must be >= 0 (0=auto)",
-                              opts.gpu_blocks, errors);
+            parse_int_option("--gpu-blocks", arg.substr(13), 0, kMaxGpuBlocks,
+                              "must be >= 0 (0=auto) and <= 1048576", opts.gpu_blocks, errors);
         } else if (arg.rfind("--gpu-tpb=", 0) == 0) {
-            parse_int_option("--gpu-tpb", arg.substr(10), 1, "must be > 0",
-                              opts.gpu_threads_per_block, errors);
+            parse_int_option("--gpu-tpb", arg.substr(10), 1, kMaxGpuThreadsPerBlock,
+                              "must be > 0 and <= 1024", opts.gpu_threads_per_block, errors);
         } else if (arg.rfind("--gpu-bpsm=", 0) == 0) {
-            parse_int_option("--gpu-bpsm", arg.substr(11), 1, "must be > 0",
-                              opts.gpu_blocks_per_sm, errors);
+            parse_int_option("--gpu-bpsm", arg.substr(11), 1, kMaxGpuBlocksPerSm,
+                              "must be > 0 and <= 64", opts.gpu_blocks_per_sm, errors);
         } else {
             errors.push_back("Unknown option: " + arg);
         }

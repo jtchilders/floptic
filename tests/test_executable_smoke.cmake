@@ -137,6 +137,43 @@ endif()
 run_case("empty_combination_fails" 1 "" "no benchmarks were executed"
     --kernels=scalar --precision=int8 --device=cpu --trials=1 --inner-iters=100)
 
+# 8. Resource safety ceilings: exact ceiling accepted, ceiling+1 rejected.
+#    These are parser-level portability/sanity limits, not device-specific.
+run_case("cpu_threads_ceiling_ok" 0 "" ""
+    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
+    --report=stdout --cpu-threads=65536)
+run_case("cpu_threads_over_ceiling_rejected" 1 "" "out of range"
+    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
+    --report=stdout --cpu-threads=65537)
+
+run_case("gpu_blocks_ceiling_ok" 0 "" ""
+    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
+    --report=stdout --gpu-blocks=1048576)
+run_case("gpu_blocks_over_ceiling_rejected" 1 "" "out of range"
+    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
+    --report=stdout --gpu-blocks=1048577)
+
+run_case("gpu_tpb_ceiling_ok" 0 "" ""
+    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
+    --report=stdout --gpu-tpb=1024)
+run_case("gpu_tpb_over_ceiling_rejected" 1 "" "out of range"
+    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
+    --report=stdout --gpu-tpb=1025)
+
+run_case("gpu_bpsm_ceiling_ok" 0 "" ""
+    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
+    --report=stdout --gpu-bpsm=64)
+run_case("gpu_bpsm_over_ceiling_rejected" 1 "" "out of range"
+    --device=cpu --kernel=scalar_fma --trials=1 --inner-iters=1 --warmup=0
+    --report=stdout --gpu-bpsm=65)
+
+# 9. Reproduces the reviewer-reported defect directly: INT_MAX across all
+#    four resource controls must now be rejected, not silently accepted.
+run_case("int_max_resource_controls_rejected" 1 "" "out of range"
+    --device=cpu --kernel=scalar_fma --precision=fp64 --trials=1 --inner-iters=1
+    --warmup=0 --gpu-tpb=2147483647 --gpu-bpsm=2147483647 --gpu-blocks=2147483647
+    --cpu-threads=2147483647 --report=stdout)
+
 if(_fail_count GREATER 0)
     message(FATAL_ERROR "${_fail_count} executable smoke case(s) failed")
 endif()

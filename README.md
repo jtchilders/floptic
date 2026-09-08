@@ -127,10 +127,10 @@ Options:
   --output-md=<PATH>   Markdown report output file
 
 Thread/block control:
-  --cpu-threads=<N>    CPU threads (default: all physical cores)
-  --gpu-blocks=<N>     CUDA grid blocks (default: auto)
-  --gpu-tpb=<N>        Threads per block (default: 256)
-  --gpu-bpsm=<N>       Blocks per SM (default: 4)
+  --cpu-threads=<N>    CPU threads (0 <= N <= 65536; default: all physical cores)
+  --gpu-blocks=<N>     CUDA grid blocks (0 <= N <= 1048576; default: auto)
+  --gpu-tpb=<N>        Threads per block (0 < N <= 1024, default: 256)
+  --gpu-bpsm=<N>       Blocks per SM (0 < N <= 64, default: 4)
 
 Other:
   --list               List available kernels and exit

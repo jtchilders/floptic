@@ -162,6 +162,81 @@ void test_gpu_tpb_and_bpsm_must_be_positive() {
     }
 }
 
+// ---------------------------------------------------------------------
+// Requirement: explicit generic safety ceilings on resource controls.
+//
+// These are parser-level portability/sanity ceilings, not hardware-specific
+// limits — they exist to reject nonsensical values (e.g. INT_MAX) before
+// device discovery. Real devices may impose stricter limits later; this
+// only guards against obviously-unsafe inputs at the CLI boundary.
+// ---------------------------------------------------------------------
+
+void test_cpu_threads_ceiling_boundary() {
+    {
+        // Exact ceiling: accepted.
+        Argv args({"--cpu-threads=65536"});
+        CliOptions opts = parse_args(args.argc(), args.argv());
+        CHECK_TRUE(opts.valid);
+        CHECK_EQ(opts.cpu_threads, 65536);
+    }
+    {
+        // Ceiling + 1: rejected.
+        Argv args({"--cpu-threads=65537"});
+        CliOptions opts = parse_args(args.argc(), args.argv());
+        CHECK_TRUE(!opts.valid);
+    }
+}
+
+void test_gpu_blocks_ceiling_boundary() {
+    {
+        Argv args({"--gpu-blocks=1048576"});
+        CliOptions opts = parse_args(args.argc(), args.argv());
+        CHECK_TRUE(opts.valid);
+        CHECK_EQ(opts.gpu_blocks, 1048576);
+    }
+    {
+        Argv args({"--gpu-blocks=1048577"});
+        CliOptions opts = parse_args(args.argc(), args.argv());
+        CHECK_TRUE(!opts.valid);
+    }
+}
+
+void test_gpu_tpb_ceiling_boundary() {
+    {
+        Argv args({"--gpu-tpb=1024"});
+        CliOptions opts = parse_args(args.argc(), args.argv());
+        CHECK_TRUE(opts.valid);
+        CHECK_EQ(opts.gpu_threads_per_block, 1024);
+    }
+    {
+        Argv args({"--gpu-tpb=1025"});
+        CliOptions opts = parse_args(args.argc(), args.argv());
+        CHECK_TRUE(!opts.valid);
+    }
+}
+
+void test_gpu_bpsm_ceiling_boundary() {
+    {
+        Argv args({"--gpu-bpsm=64"});
+        CliOptions opts = parse_args(args.argc(), args.argv());
+        CHECK_TRUE(opts.valid);
+        CHECK_EQ(opts.gpu_blocks_per_sm, 64);
+    }
+    {
+        Argv args({"--gpu-bpsm=65"});
+        CliOptions opts = parse_args(args.argc(), args.argv());
+        CHECK_TRUE(!opts.valid);
+    }
+}
+
+void test_resource_ceilings_reject_int_max() {
+    // Reproduces the reviewer-reported defect: INT_MAX must not pass.
+    Argv args({"--cpu-threads=2147483647", "--gpu-blocks=2147483647",
+               "--gpu-tpb=2147483647", "--gpu-bpsm=2147483647"});
+    CliOptions opts = parse_args(args.argc(), args.argv());
+    CHECK_TRUE(!opts.valid);
+}
+
 void test_malformed_integers_are_caught_without_throwing() {
     const std::vector<std::string> bad_values = {
         "--trials=abc", "--trials=1.5", "--trials=", "--trials=1x",
@@ -344,6 +419,11 @@ int main() {
     test_warmup_allows_zero_but_not_negative();
     test_cpu_threads_and_gpu_blocks_allow_zero_as_auto();
     test_gpu_tpb_and_bpsm_must_be_positive();
+    test_cpu_threads_ceiling_boundary();
+    test_gpu_blocks_ceiling_boundary();
+    test_gpu_tpb_ceiling_boundary();
+    test_gpu_bpsm_ceiling_boundary();
+    test_resource_ceilings_reject_int_max();
     test_malformed_integers_are_caught_without_throwing();
     test_empty_list_values_are_rejected();
     test_unknown_precision_is_rejected_not_mapped_to_fp64();
